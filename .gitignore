@@ -1,0 +1,56 @@
+# Build
+build/
+build-*/
+out/
+cmake-build-*/
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dll
+*.dylib
+*.exe
+*.exp
+*.pdb
+*.ilk
+
+# Models / artifacts
+*.tcpp
+*.gguf
+*.safetensors
+*.bin
+models/
+checkpoints/
+
+# Editors / IDEs
+.vscode/
+.idea/
+.vs/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+CMakeUserPresets.json
+cmake_install.cmake
+Makefile
+*.cmake
+!CMakeLists.txt
+
+# Coverage / profiling
+*.gcda
+*.gcno
+*.gcov
+perf.data*
+callgrind.out*
