@@ -61,29 +61,32 @@ void ThreadPool::parallel_for(size_t n, const std::function<void(size_t, size_t)
 
     const size_t chunk = (n + P - 1) / P;
 
-    std::mutex done_mu;
-    std::condition_variable done_cv;
+    // Pure-atomic completion counter. Avoids the classic stack-local mutex
+    // teardown race (worker decrements then locks; main exits wait, then
+    // mutex destructs while worker still inside the lock_guard). On macOS
+    // libc++ that race manifests as `mutex lock failed: Invalid argument`.
     std::atomic<size_t> remaining{P - 1};
 
     for (size_t p = 0; p < P - 1; ++p) {
         const size_t beg = p * chunk;
         const size_t end = std::min(beg + chunk, n);
-        if (beg >= end) { remaining.fetch_sub(1); continue; }
-        enqueue([&, beg, end] {
+        if (beg >= end) { remaining.fetch_sub(1, std::memory_order_release); continue; }
+        enqueue([&fn, &remaining, beg, end] {
             fn(beg, end);
-            if (remaining.fetch_sub(1) == 1) {
-                std::lock_guard<std::mutex> lk(done_mu);
-                done_cv.notify_one();
-            }
+            remaining.fetch_sub(1, std::memory_order_release);
         });
     }
 
-    // Self-run the last chunk.
+    // Self-run the last chunk while workers churn through theirs.
     const size_t beg = (P - 1) * chunk;
     if (beg < n) fn(beg, n);
 
-    std::unique_lock<std::mutex> lk(done_mu);
-    done_cv.wait(lk, [&] { return remaining.load() == 0; });
+    // Spin-wait for stragglers. Tasks are coarse-grained matmul slabs —
+    // expected wait < 1 ms on a balanced split, so spin is cheaper than
+    // a full futex round-trip.
+    while (remaining.load(std::memory_order_acquire) > 0) {
+        std::this_thread::yield();
+    }
 }
 
 // Meyers singleton — constructed on first use, thread-safe since C++11.
