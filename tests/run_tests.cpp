@@ -10,7 +10,10 @@
 #include "../quant/q4.h"
 #include "../quant/q8.h"
 #include "../quant/fp16.h"
+#include "../quant/hadamard.h"
+#include "../quant/tq.h"
 #include "../quant/kv_quant.h"
+#include "../runtime/chat.h"
 #include "../tokenizer/bpe.h"
 
 #include <algorithm>
@@ -179,6 +182,67 @@ static void test_fp16_roundtrip() {
     CHECK(rel < 5e-3f, "fp16 relative error too large: %.3e", rel);
 }
 
+// Hadamard is its own inverse (when normalized): H(H(x)) = x.
+static void test_hadamard_involution() {
+    const size_t N = 128;
+    AlignedBuffer<float> x(N), y(N);
+    std::mt19937 rng(13);
+    std::normal_distribution<float> d(0.0f, 1.0f);
+    for (size_t i = 0; i < N; ++i) { x.data()[i] = d(rng); y.data()[i] = x.data()[i]; }
+    hadamard_inplace(y.data(), N);
+    hadamard_inplace(y.data(), N);
+    float err = 0;
+    for (size_t i = 0; i < N; ++i) err = std::max(err, std::fabs(x.data()[i] - y.data()[i]));
+    CHECK(err < 1e-4f, "hadamard involution err: %.3e", err);
+}
+
+// TurboQuant matmul should agree with fp32 matmul to within Q4 quant error.
+static void test_tq_matmul() {
+    const size_t M = 1, N = 64, K = 256;
+    AlignedBuffer<float> A(K), W(N * K), C0(N), C1(N);
+    std::mt19937 rng(101);
+    std::normal_distribution<float> d(0.0f, 0.1f);
+    for (size_t i = 0; i < K; ++i)     A.data()[i] = d(rng);
+    for (size_t i = 0; i < N * K; ++i) W.data()[i] = d(rng);
+
+    // Reference fp32 matmul.
+    matmul(A.data(), W.data(), C0.data(), M, N, K);
+
+    // Quantize via TurboQuant (Hadamard then Q4).
+    std::vector<Q4Block> Wtq(N * (K / 32));
+    tq_quantize_matrix(W.data(), Wtq.data(), N, K);
+    matmul_tq(A.data(), Wtq.data(), C1.data(), M, N, K);
+
+    float maxe = 0, maxref = 0;
+    for (size_t i = 0; i < N; ++i) {
+        maxe   = std::max(maxe,   std::fabs(C0.data()[i] - C1.data()[i]));
+        maxref = std::max(maxref, std::fabs(C0.data()[i]));
+    }
+    CHECK(maxe / (maxref + 1e-6f) < 0.15f,
+          "tq vs fp32 rel err too large: %.3e (ref %.3e)", maxe, maxref);
+}
+
+static void test_chat_template_llama3() {
+    std::vector<ChatMessage> msgs = {
+        {"system", "You are helpful."},
+        {"user",   "Hi"},
+    };
+    std::string p = apply_template(ChatTemplate::LLaMA3, msgs);
+    CHECK(p.find("<|start_header_id|>system<|end_header_id|>") != std::string::npos,
+          "llama3 system header missing");
+    CHECK(p.find("<|start_header_id|>assistant<|end_header_id|>") != std::string::npos,
+          "llama3 assistant header missing (priming)");
+}
+
+static void test_stop_matcher() {
+    StopMatcher m({"\n\n", "</s>"});
+    m.append("hello");
+    CHECK(!m.stopped(), "false-positive stop");
+    m.append(" world\n\nrest");
+    CHECK(m.stopped(), "expected stop on \\n\\n");
+    CHECK(m.matched_seq() == 0, "wrong stop matched");
+}
+
 int main() {
     test_matmul_tiers_agree();
     test_softmax_sums_to_one();
@@ -189,6 +253,10 @@ int main() {
     test_fp16_roundtrip();
     test_kv_quant_roundtrip();
     test_bpe_round_trip();
+    test_hadamard_involution();
+    test_tq_matmul();
+    test_chat_template_llama3();
+    test_stop_matcher();
 
     if (g_failed == 0) {
         std::printf("ALL TESTS PASSED\n");

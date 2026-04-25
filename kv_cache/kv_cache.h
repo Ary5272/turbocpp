@@ -1,6 +1,7 @@
 #pragma once
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include "../core/allocator.h"
 
 namespace turbocpp {
@@ -63,6 +64,15 @@ public:
     size_t bytes_reserved() const noexcept {
         return 2 * n_layers_ * n_heads_ * max_seq_len_ * head_dim_ * sizeof(float);
     }
+
+    // Snapshot the live portion (K, V up to cur_len) to disk along with
+    // shape metadata + a token-prompt hash for re-validation. Returns true
+    // on success. Meant for prompt-cache use (re-running the same long
+    // prompt across invocations skips prefill entirely).
+    bool save_snapshot(const std::string& path, uint64_t prompt_hash) const;
+    // Returns true if the snapshot's shape and prompt_hash match. On match,
+    // the cache is restored to the saved state and cur_len is set.
+    bool load_snapshot(const std::string& path, uint64_t prompt_hash);
 
 private:
     inline size_t k_offset(size_t layer, size_t head) const {

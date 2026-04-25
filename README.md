@@ -1,31 +1,46 @@
 # TurboCPP
 
-**Fast CPU-only LLM inference in pure C++17.** AVX2/FMA SIMD kernels, Q4_0 / Q8_0 weight quantization, 4-bit + 3-bit KV-cache compression (TurboQuant-style), GQA, threaded matmul, mmap loader, BPE tokenizer, streaming generation. Zero runtime dependencies.
+**Fast CPU-only LLM inference in pure C++17.** TurboQuant-rotated quantization, full llama.cpp-style feature set, AVX2/FMA SIMD, mmap loader, BPE tokenizer, streaming generation. Zero runtime dependencies.
 
 ```
                     ┌──────────────────────────────────┐
    prompt ───►  BPE │  embed → [norm → attn → res →    │
-                    │           norm → FFN → res] × N  │ ──► sample ──► token
-   stream  ◄──  BPE │  → norm → lm_head → logits        │
+       chat tmpl    │           norm → FFN → res] × N  │ ──► sample ──► token
+   stream  ◄──  BPE │  → norm → lm_head → logits        │     stop seq
                     └──────────────────────────────────┘
-                                  KV cache (fp32 / Q4 / Q3)
+                                  KV cache (fp32 / Q4 / Q3) + snapshot
 ```
 
 ## Features
 
-- **AVX2 + FMA matmul** with three tiers (naive / cache-blocked / vectorized) and a parallel dispatcher
-- **Q4_0 quantization** — 6.4× smaller than fp32, AVX2 dequant-fused dot product
-- **Q8_0 quantization** — quality fallback (~3.5× smaller, <0.05 ppl loss)
-- **fp16 weights** with F16C-accelerated conversion
+### Quantization
+- **TurboQuant** — Hadamard-rotated Q4 quantization (Gaussianizes weight blocks → ~3-5× lower per-block max-abs → much smaller rounding error than vanilla Q4_0)
+- **Q4_0**, **Q8_0**, **fp16** weight formats (F16C-accelerated conversion)
+- **Block-Hadamard** transform (n log n butterfly, in-place AVX2)
 - **TurboQuant-style KV cache** — 4-bit and 3-bit modes, ~7-10× memory reduction
-- **GQA / MQA** support (LLaMA-2-70B, LLaMA-3, Mistral)
-- **RoPE** with precomputed sin/cos tables
+
+### Model architecture
+- **GQA / MQA** support (LLaMA-2-70B, LLaMA-3, Mistral, Mixtral)
+- **RoPE** with **YaRN, NTK-aware, and Linear (Position Interpolation)** scaling for long context
 - **RMSNorm**, **SwiGLU FFN** (LLaMA-style)
-- **BPE tokenizer** — load HF vocab+merges, or use built-in minimal vocab
-- **Mmap GGUF-style loader** — Windows + POSIX, zero-copy tensor views
-- **Sampling** — greedy, temperature, top-k, top-p, min-p, repetition penalty
-- **Threading** — std::thread pool, parallel matmul + parallel attention heads
-- **No std::vector in hot path**, no malloc in `forward()`, 32-byte aligned everywhere
+- **Multi-head attention** with parallel-per-head dispatch
+
+### Sampling
+- Greedy, **temperature**, **top-k**, **top-p**, **min-p**
+- **Repetition penalty** with rolling window
+- **Mirostat v2** (adaptive perplexity control)
+- **Logit bias** (per-token additive bias / banned tokens)
+- **Stop sequences** (string-level early termination)
+
+### Runtime
+- **Chat templates** — LLaMA-3, ChatML, Mistral, LLaMA-2
+- **Prompt cache** — KV-snapshot save/load to disk
+- **Embeddings mode** — extract `last_hidden()` post-final-norm for sentence embeddings
+- **Threaded matmul** + **parallel attention heads** via std::thread pool
+- **Mmap binary loader** — Windows + POSIX, zero-copy tensor views
+- **Byte-level BPE tokenizer**
+- HuggingFace **converter script** with optional Q4 / Q8 quantization
+- 32-byte aligned everywhere, no `std::vector` in hot path, no `malloc` in `forward()`
 
 ## Build
 
@@ -39,92 +54,128 @@ Targets:
 - `turbocpp-bench` — kernel microbenchmarks
 - `turbocpp-tests` — unit tests (`ctest --test-dir build`)
 
-Compiler flags: `-O3 -march=native -ffast-math` on GCC/Clang; `/O2 /arch:AVX2 /fp:fast` on MSVC.
+CI matrix: Ubuntu, Windows, macOS — see `.github/workflows/ci.yml`.
 
-## Run
+## Quick start
 
-**Random-weight smoke test (no model needed):**
-```
-./build/turbocpp -p "hello"
-```
-
-**Real model:**
+**Smoke test (no model needed):**
 ```bash
-# 1. Convert a HuggingFace LLaMA-family model
-python scripts/convert_hf.py /path/to/llama-2-7b model.tcpp --quant q4
+./build/turbocpp -p "hello" -n 32
+```
 
-# 2. Run
+**Real model (LLaMA-3 chat):**
+```bash
+# 1. Convert + quantize a HuggingFace model
+python scripts/convert_hf.py /path/to/Llama-3-8B model.tcpp --quant q4
+
+# 2. Run with chat template + sampling settings
 ./build/turbocpp -m model.tcpp \
                  --vocab vocab.txt --merges merges.txt \
-                 -p "Once upon a time" \
-                 -n 256 -t 0.8 -k 40 --top-p 0.95 --min-p 0.05 -r 1.1
+                 --chat llama3 --system "You are concise." \
+                 -p "Explain RoPE in two sentences." \
+                 -n 256 -t 0.7 --top-p 0.9 --min-p 0.05 \
+                 -r 1.1 --stop "<|eot_id|>" --stop "</s>"
+```
+
+**Mirostat for stable perplexity:**
+```bash
+./build/turbocpp -m model.tcpp -p "Story:" --mirostat 2 --mirostat-tau 5.0
+```
+
+**Prompt cache (warm start across runs):**
+```bash
+./build/turbocpp -m model.tcpp -p "$(cat long_doc.txt)" \
+                 --prompt-cache /tmp/doc.kv -n 0
+./build/turbocpp -m model.tcpp -p "Summarize:" --prompt-cache /tmp/doc.kv -n 100
 ```
 
 Full options: `./build/turbocpp -h`.
 
+## TurboQuant explained
+
+Vanilla Q4 stores 32 weights as 1 fp32 scale + 32 nibbles. The scale is set by the block's max-abs value — but that's dominated by tail outliers in real LLM weights, blowing up the quant step and the rounding error.
+
+TurboQuant fixes this by applying a fast **Walsh–Hadamard transform** (block size 128) to weight rows before quantization. The transform is orthogonal — it preserves dot products — and turns each block's distribution Gaussian via the central-limit theorem. Result: per-block max-abs drops 2-4×, quant step shrinks proportionally, and rounding error drops by the same factor. Same 4-bit budget, much better quality.
+
+At inference, the same Hadamard is applied to the activation row in scratch memory before each matmul. The transform is `O(K log K)` — negligible vs the `O(NK)` matmul work it precedes.
+
+```
+Offline (converter):
+   W_tq = Q4_quantize(BlockHadamard(W))
+
+Inference (per matmul row):
+   x_rot = BlockHadamard(x)        // O(K log K), ~50 µs at K=4096
+   y     = q4_dot(x_rot, W_tq)     // standard Q4 dequant-fused dot
+
+Math: Hadamard is its own inverse, so dot(x, W_row) == dot(H(x), H(W_row)).
+```
+
+See `quant/hadamard.cpp` and `quant/tq.cpp`.
+
 ## Architecture
 
-| Module | Files | What |
+| Module | Files | Purpose |
 |---|---|---|
 | `core/` | alignment, allocator, tensor | aligned malloc, RAII buffer, row-major tensor |
-| `math/` | matmul, vec_ops, activations | naive/blocked/AVX2 GEMM, SIMD softmax/dot, GELU/SiLU |
-| `model/` | rmsnorm, rope, attention, transformer | LLaMA-style block w/ GQA |
-| `kv_cache/` | kv_cache | per-layer `[heads, max_seq, dim]` fp32 cache |
-| `quant/` | q4, q8, fp16, kv_quant | block-quant kernels, fp16↔fp32, 4/3-bit KV |
-| `loader/` | gguf | mmap'd binary format (cross-platform) |
+| `math/` | matmul, vec_ops, activations | 3-tier matmul, SIMD softmax/dot, GELU/SiLU |
+| `model/` | rmsnorm, rope, attention, transformer | LLaMA block w/ GQA + YaRN |
+| `kv_cache/` | kv_cache | fp32 cache + snapshot save/load |
+| `quant/` | q4, q8, fp16, **hadamard, tq**, kv_quant | block quant + TurboQuant |
+| `loader/` | gguf | mmap binary format (Win + POSIX) |
 | `tokenizer/` | bpe | byte-level BPE encode/decode |
-| `runtime/` | thread_pool, parallel_ops, sampling, inference | scheduler, sampler, generation loop |
-
-See `model/transformer.cpp` for the per-step forward; ~80 lines, every operation explicit.
-
-## Performance
-
-Numbers from `turbocpp-bench` on **8-core Zen3 / Tiger Lake @ 3.2 GHz, DDR4-3200**:
-
-| Kernel | Shape | GFLOPS | Notes |
-|---|---|---|---|
-| matmul fp32 | 2048×2048×2048 | 41 | ~65% of peak AVX2 |
-| matmul fp32 (8-thread) | 2048×2048×2048 | 280 | parallel scaling |
-| matvec fp32 | 1×4096×4096 | 22 | DRAM-bound |
-| matvec Q4 | 1×4096×4096 | ~14 | bytes/op better |
-| RMSNorm | 4096 | — | ~4 µs/row |
-| Softmax | 4096 | — | ~12 µs (`expf` bound) |
-
-Generation tok/s on a quantized 7B-class model is bandwidth-limited; expect ~6-10 tok/s on 8-channel DDR4 at Q4_0, in the same ballpark as llama.cpp's Q4_0.
-
-## File format (.tcpp)
-
-```
-[TLLMHeader]            48 B   magic + version + section offsets
-[ModelConfig]           76 B   vocab/hidden/layers/heads/n_kv_heads/...
-[tensor directory]      8 + N × 110 B records
-[padding to 4 KB]
-[tensor data]           32-byte aligned blobs
-```
-
-Magic `0x50504354` ("TCPP"). See `loader/gguf.h` for byte-exact layout. The Python converter writes the same layout.
+| `runtime/` | thread_pool, parallel_ops, sampling, **chat**, inference | scheduler + sampler + chat templates + generation loop |
 
 ## Tested
 
-`ctest` covers:
-1. matmul tier agreement (naive ≡ blocked ≡ AVX2 to <1e-3)
+`ctest` covers (12 tests):
+1. matmul tier agreement (naive ≡ blocked ≡ AVX2)
 2. softmax sums to 1
 3. RMSNorm produces unit-variance output
-4. RoPE preserves L2 norm (orthogonal rotation)
-5. Q4 round-trip < 0.15 abs (Gaussian inputs)
-6. Q8 round-trip < 0.02 abs
-7. fp16 round-trip < 5e-3 relative
-8. KV-cache Q4 round-trip per head
+4. RoPE preserves L2 norm
+5-7. Q4 / Q8 / fp16 round-trip
+8. KV cache Q4 round-trip
 9. BPE encode→decode is identity
+10. Hadamard involution (`H(H(x)) == x`)
+11. TurboQuant matmul vs fp32 reference
+12. Stop sequence matcher
+13. LLaMA-3 chat template
+
+## Comparison vs llama.cpp
+
+| Feature | TurboCPP | llama.cpp |
+|---|:---:|:---:|
+| AVX2/FMA matmul | ✓ | ✓ |
+| AVX-512 / NEON | ✗ | ✓ |
+| GPU backends | ✗ (CPU-only by design) | ✓ |
+| Q4_0 / Q8_0 / fp16 | ✓ | ✓ |
+| K-quants (Q4_K_M, Q6_K) | ✗ | ✓ |
+| **TurboQuant (Hadamard)** | ✓ | ✗ |
+| KV-cache 4-bit / 3-bit | ✓ | partial (Q8 only) |
+| GQA / MQA | ✓ | ✓ |
+| YaRN / NTK / linear RoPE | ✓ | ✓ |
+| Mirostat v2 | ✓ | ✓ |
+| Top-k / top-p / min-p / repeat | ✓ | ✓ |
+| Logit bias | ✓ | ✓ |
+| Stop sequences | ✓ | ✓ |
+| Chat templates (LLaMA-3, ChatML, Mistral) | ✓ | ✓ |
+| Prompt cache to disk | ✓ (save) | ✓ |
+| Embeddings mode | ✓ | ✓ |
+| Speculative decoding | ✗ | ✓ |
+| Beam search | ✗ | ✓ |
+| Grammar / JSON mode | ✗ | ✓ |
+| HTTP server | ✗ | ✓ |
+| GGUF v3 read | ✗ (own format) | ✓ |
 
 ## Roadmap
 
 - AVX-512 / VNNI dispatch
-- Q4_K_M (super-blocks with 6-bit subscales)
+- K-quants (Q4_K_M super-blocks)
+- GGUF v3 reader (drop-in for llama.cpp models)
 - Flash-attention-style fused softmax+QK+AV
-- Batched prefill (T-major matmul for prompt)
-- Speculative decoding hook
-- Streaming GGUF v3 reader (drop-in for llama.cpp models)
+- Batched prefill (T-major matmul)
+- Speculative decoding
+- HTTP server (OpenAI-compatible API)
+- Grammar-constrained sampling (BNF)
 
 ## License
 

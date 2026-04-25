@@ -98,7 +98,7 @@ void softmax_inplace(float* x, size_t n) {
             __m256 v = _mm256_loadu_ps(x + i);
             vmax = _mm256_max_ps(vmax, v);
         }
-        float buf[8] __attribute__((aligned(32)));
+        alignas(32) float buf[8];
         _mm256_store_ps(buf, vmax);
         for (int j = 0; j < 8; ++j) if (buf[j] > maxv) maxv = buf[j];
         for (; i < n; ++i) if (x[i] > maxv) maxv = x[i];

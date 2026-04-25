@@ -23,6 +23,12 @@ endif()
 
 if(MSVC)
     add_compile_options(/W3 /EHsc)
+    # /D NOMINMAX so windows.h doesn't poison std::min/max.
+    # /wd4476/4477/4473: MSVC's format-string checker misreads `%` inside
+    # stringified condition expressions in our TCPP_CHECK macros (the % is
+    # the C modulo operator, not a format spec). Runtime behavior is fine.
+    add_compile_definitions(NOMINMAX _CRT_SECURE_NO_WARNINGS)
+    add_compile_options(/wd4476 /wd4477 /wd4473)
     # MSVC: /arch:AVX2 enables AVX2+FMA3 intrinsics. /fp:fast is the
     # ffast-math analog.
     add_compile_options(
@@ -33,7 +39,6 @@ if(MSVC)
         $<$<CONFIG:Debug>:/Od>
         $<$<CONFIG:Debug>:/Zi>
     )
-    add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 else()
     add_compile_options(-Wall -Wextra -Wno-unused-parameter -Wno-unused-function)
     add_compile_options(
@@ -73,6 +78,8 @@ set(TURBOCPP_SOURCES
     quant/q4.cpp
     quant/q8.cpp
     quant/fp16.cpp
+    quant/hadamard.cpp
+    quant/tq.cpp
     quant/kv_quant.cpp
     loader/gguf.cpp
     tokenizer/bpe.cpp
@@ -80,6 +87,7 @@ set(TURBOCPP_SOURCES
     runtime/sampling.cpp
     runtime/inference.cpp
     runtime/parallel_ops.cpp
+    runtime/chat.cpp
 )
 
 add_library(turbocpp_core STATIC ${TURBOCPP_SOURCES})

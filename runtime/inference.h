@@ -20,7 +20,8 @@ struct GenerateOptions {
     size_t         max_new_tokens = 128;
     bool           stop_on_eos    = true;
     SamplingParams sampling;
-    TokenCallback  on_token;       // optional — for streaming UIs
+    TokenCallback  on_token;                  // optional — for streaming UIs
+    std::vector<std::string> stop_sequences;  // string-level early stop
 };
 
 struct GenerateStats {

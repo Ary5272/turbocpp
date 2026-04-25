@@ -1,4 +1,5 @@
 #include "inference.h"
+#include "chat.h"
 #include "../utils/timing.h"
 #include "../utils/logging.h"
 
@@ -62,27 +63,38 @@ std::string InferenceEngine::generate(const std::string& prompt,
     // -----------------------------------------------------------------------
     // Decode loop
     // -----------------------------------------------------------------------
+    StopMatcher stopper(opts.stop_sequences);
     {
         Timer t;
         for (size_t g = 0; g < opts.max_new_tokens; ++g) {
-            // Sample next token from last logits. After the last prefill
-            // step, logits_ holds the next-token distribution.
             const int32_t next = sampler_.sample(logits_.data(), cfg.vocab_size);
 
             if (opts.stop_on_eos && next == tok_->eos_id) break;
 
             const std::string& piece = tok_->id_to_token(next);
-            // Skip specials in visible output.
-            if (!(piece.size() >= 2 && piece.front() == '<' && piece.back() == '>')) {
-                out_text += piece;
+            const bool is_special = (piece.size() >= 2 &&
+                                     piece.front() == '<' && piece.back() == '>');
+            if (!is_special) out_text += piece;
+
+            // Stop sequence check.
+            if (!opts.stop_sequences.empty()) {
+                stopper.append(piece);
+                if (stopper.stopped()) {
+                    // Trim out_text back to before the stop sequence text.
+                    // We track only by the last cut: an upper bound that matches
+                    // most cases (single-stop, single-pass).
+                    const auto& seq = opts.stop_sequences[size_t(stopper.matched_seq())];
+                    auto pos_in_out = out_text.rfind(seq);
+                    if (pos_in_out != std::string::npos) out_text.resize(pos_in_out);
+                    break;
+                }
             }
 
             if (opts.on_token && !opts.on_token(next, piece)) break;
             ++stats.generated_tokens;
 
-            if (pos + 1 >= cfg.max_seq_len) break;  // context full
+            if (pos + 1 >= cfg.max_seq_len) break;
 
-            // Feed the sampled token back in for the next step.
             model_->forward(next, pos, cache_, logits_.data());
             sampler_.record(next);
             ++pos;

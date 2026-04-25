@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <deque>
 #include <random>
+#include <unordered_map>
 #include <vector>
 
 namespace turbocpp {
@@ -18,13 +19,24 @@ namespace turbocpp {
 //   6. top-p filter (keep cumulative ≤ top_p)
 //   7. multinomial sample
 struct SamplingParams {
-    float    temperature   = 0.0f;     // 0 = greedy (skips 2-7, takes argmax)
+    float    temperature   = 0.0f;     // 0 = greedy (skips everything, takes argmax)
     int32_t  top_k         = 0;        // 0 = disabled
     float    top_p         = 1.0f;     // 1.0 = disabled
     float    min_p         = 0.0f;     // 0.0 = disabled
     float    repeat_penalty = 1.0f;    // 1.0 = disabled
-    int32_t  repeat_window = 64;       // last N tokens considered
+    int32_t  repeat_window = 64;       // last N tokens considered for repetition
     uint64_t seed          = 0xDEADBEEFCAFEBABEull;
+
+    // Mirostat v2 (Basu et al. 2020): adaptively control the perplexity
+    // (surprisal) of generated text. 0 = off; mirostat=2 enables. tau is
+    // target surprisal in nats; eta is learning rate.
+    int      mirostat      = 0;        // 0=off, 2=on
+    float    mirostat_tau  = 5.0f;
+    float    mirostat_eta  = 0.1f;
+
+    // Per-token additive bias on logits. Set bias[id] = -INF to ban a
+    // token, +inf to force-pin it. Applied before temperature.
+    std::unordered_map<int32_t, float> logit_bias;
 };
 
 class Sampler {
@@ -48,6 +60,8 @@ private:
     std::mt19937_64 rng_;
     std::deque<int32_t> history_;
     std::vector<std::pair<float, int32_t>> scratch_;
+    // Mirostat state: μ ≈ 2τ at start; updated after each sample.
+    float mu_ = 0.0f;
 };
 
 } // namespace turbocpp

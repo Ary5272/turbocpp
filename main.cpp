@@ -10,11 +10,14 @@
 #include "kv_cache/kv_cache.h"
 #include "loader/gguf.h"
 #include "model/transformer.h"
+#include "runtime/chat.h"
 #include "runtime/inference.h"
 #include "runtime/thread_pool.h"
 #include "tokenizer/bpe.h"
 #include "utils/timing.h"
 #include "utils/logging.h"
+
+#include <sstream>
 
 #include <cstdio>
 #include <cstdlib>
@@ -44,6 +47,13 @@ struct Args {
     int   threads = 0;     // 0 = auto
     bool  quiet = false;
     bool  show_help = false;
+    int   mirostat = 0;
+    float mirostat_tau = 5.0f;
+    float mirostat_eta = 0.1f;
+    std::string chat = "";          // "llama3" / "chatml" / "mistral" / ...
+    std::string system_prompt = "";
+    std::vector<std::string> stop;  // --stop "\n\n" --stop "</s>"
+    std::string prompt_cache;       // path: load+save KV across runs
 };
 
 static void usage(const char* prog) {
@@ -63,6 +73,13 @@ static void usage(const char* prog) {
 "      --repeat-window N    last N tokens to penalize (default: 64)\n"
 "  -s, --seed N             RNG seed (default: random)\n"
 "      --threads N          worker threads (default: hardware_concurrency)\n"
+"      --mirostat N         0=off, 2=mirostat v2 (overrides top-k/p)\n"
+"      --mirostat-tau F     mirostat target surprisal (default: 5.0)\n"
+"      --mirostat-eta F     mirostat learning rate (default: 0.1)\n"
+"      --chat NAME          apply chat template: llama3|chatml|mistral|llama2\n"
+"      --system TEXT        system prompt (used with --chat)\n"
+"      --stop SEQ           add a stop sequence (repeatable)\n"
+"      --prompt-cache PATH  save/load KV state for prompt reuse\n"
 "  -q, --quiet              suppress timing stats\n"
 "  -h, --help               this message\n",
         prog, prog);
@@ -89,6 +106,13 @@ static int parse_args(int argc, char** argv, Args& a) {
         else if (s == "--repeat-window")                a.repeat_window = std::atoi(need("--repeat-window"));
         else if (s == "-s" || s == "--seed")            a.seed = uint64_t(std::strtoull(need("-s"), nullptr, 10));
         else if (s == "--threads")                      a.threads = std::atoi(need("--threads"));
+        else if (s == "--mirostat")                     a.mirostat = std::atoi(need("--mirostat"));
+        else if (s == "--mirostat-tau")                 a.mirostat_tau = float(std::atof(need("--mirostat-tau")));
+        else if (s == "--mirostat-eta")                 a.mirostat_eta = float(std::atof(need("--mirostat-eta")));
+        else if (s == "--chat")                         a.chat = need("--chat");
+        else if (s == "--system")                       a.system_prompt = need("--system");
+        else if (s == "--stop")                         a.stop.emplace_back(need("--stop"));
+        else if (s == "--prompt-cache")                 a.prompt_cache = need("--prompt-cache");
         else if (s == "-q" || s == "--quiet")           a.quiet = true;
         else { std::fprintf(stderr, "unknown arg: %s\n", s.c_str()); return 2; }
     }
@@ -225,6 +249,16 @@ int main(int argc, char** argv) {
     InferenceEngine engine;
     engine.init(model, tok);
 
+    // Build the actual prompt: optionally apply chat template.
+    std::string final_prompt = args.prompt;
+    if (!args.chat.empty()) {
+        ChatTemplate ct = parse_template(args.chat);
+        std::vector<ChatMessage> msgs;
+        if (!args.system_prompt.empty()) msgs.push_back({"system", args.system_prompt});
+        msgs.push_back({"user", args.prompt});
+        final_prompt = apply_template(ct, msgs);
+    }
+
     GenerateOptions opts;
     opts.max_new_tokens = size_t(std::max(1, args.n_predict));
     opts.sampling.temperature   = args.temperature;
@@ -234,6 +268,10 @@ int main(int argc, char** argv) {
     opts.sampling.repeat_penalty = args.repeat_penalty;
     opts.sampling.repeat_window  = args.repeat_window;
     opts.sampling.seed = args.seed;
+    opts.sampling.mirostat       = args.mirostat;
+    opts.sampling.mirostat_tau   = args.mirostat_tau;
+    opts.sampling.mirostat_eta   = args.mirostat_eta;
+    opts.stop_sequences = args.stop;
     opts.on_token = [](int32_t, const std::string& piece) {
         std::printf("%s", piece.c_str());
         std::fflush(stdout);
@@ -242,8 +280,21 @@ int main(int argc, char** argv) {
 
     if (!args.quiet) std::printf("\n%s", args.prompt.c_str());
     GenerateStats st;
-    engine.generate(args.prompt, opts, &st);
+    engine.generate(final_prompt, opts, &st);
     std::printf("\n");
+
+    // Prompt cache: snapshot the post-prefill+decode KV state for next run.
+    // (Re-using the snapshot to skip prefill is on the roadmap — it requires
+    // re-running the last prompt token to repopulate logits.)
+    if (!args.prompt_cache.empty()) {
+        auto fnv1a64 = [](const std::string& s) -> uint64_t {
+            uint64_t h = 0xcbf29ce484222325ULL;
+            for (unsigned char c : s) { h ^= c; h *= 0x100000001b3ULL; }
+            return h;
+        };
+        engine.cache().save_snapshot(args.prompt_cache, fnv1a64(final_prompt));
+        if (!args.quiet) std::printf("[prompt cache saved: %s]\n", args.prompt_cache.c_str());
+    }
 
     if (!args.quiet) {
         std::printf("\n----- stats -----\n");

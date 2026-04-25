@@ -12,8 +12,67 @@ void Sampler::record(int32_t id) {
     }
 }
 
+// Mirostat v2 entry — runs AFTER repetition penalty + temperature.
+// Algorithm:
+//   1. softmax the logits.
+//   2. sort descending, find smallest k s.t. probs[k] would push surprisal
+//      below μ. Equivalent to k = floor(exp(μ)).
+//   3. truncate to top-k, renormalize, sample, observe surprisal s.
+//   4. error = s - τ; μ -= eta * error.
+static int32_t mirostat_v2_sample(float* logits, size_t vocab_size,
+                                  float tau, float eta, float& mu,
+                                  std::mt19937_64& rng,
+                                  std::vector<std::pair<float,int32_t>>& scratch) {
+    // softmax in place.
+    float maxv = logits[0];
+    for (size_t i = 1; i < vocab_size; ++i) if (logits[i] > maxv) maxv = logits[i];
+    float sum = 0;
+    for (size_t i = 0; i < vocab_size; ++i) { logits[i] = std::exp(logits[i] - maxv); sum += logits[i]; }
+    for (size_t i = 0; i < vocab_size; ++i) logits[i] /= sum;
+
+    scratch.resize(vocab_size);
+    for (size_t i = 0; i < vocab_size; ++i) scratch[i] = {logits[i], int32_t(i)};
+    std::sort(scratch.begin(), scratch.end(),
+              [](const auto& a, const auto& b) { return a.first > b.first; });
+
+    // k = max ranks whose surprisal stays under μ. Surprisal of rank r ≈
+    // -log(probs[r]); we want -log p ≤ μ → p ≥ e^-μ.
+    const float p_min = std::exp(-mu);
+    size_t k = 0;
+    for (; k < vocab_size; ++k) if (scratch[k].first < p_min) break;
+    if (k == 0) k = 1;
+
+    // Renormalize the top-k.
+    float s2 = 0;
+    for (size_t i = 0; i < k; ++i) s2 += scratch[i].first;
+    std::uniform_real_distribution<float> uni(0, 1);
+    float r = uni(rng) * s2;
+    float cum = 0;
+    int32_t pick = scratch[0].second;
+    float pick_p = scratch[0].first;
+    for (size_t i = 0; i < k; ++i) {
+        cum += scratch[i].first;
+        if (r < cum) { pick = scratch[i].second; pick_p = scratch[i].first; break; }
+    }
+    // Update μ.
+    const float observed = -std::log(std::max(pick_p, 1e-9f));
+    mu -= eta * (observed - tau);
+    if (mu < 0) mu = 0;
+    return pick;
+}
+
 int32_t Sampler::sample(float* logits, size_t vocab_size) {
     if (vocab_size == 0) return 0;
+
+    // 0. Logit bias (additive, applied first so it composes with everything
+    // downstream).
+    if (!params_.logit_bias.empty()) {
+        for (const auto& kv : params_.logit_bias) {
+            if (kv.first >= 0 && size_t(kv.first) < vocab_size) {
+                logits[size_t(kv.first)] += kv.second;
+            }
+        }
+    }
 
     // 1. Repetition penalty (CTRL-style: divide if positive, multiply if
     // negative — preserves sign sensibly).
@@ -34,6 +93,14 @@ int32_t Sampler::sample(float* logits, size_t vocab_size) {
     // 2. Temperature.
     if (params_.temperature != 1.0f) {
         vec_scale(logits, 1.0f / params_.temperature, vocab_size);
+    }
+
+    // Mirostat v2: takes over after temperature; bypass top-k/p/min-p.
+    if (params_.mirostat == 2) {
+        if (mu_ <= 0.0f) mu_ = 2.0f * params_.mirostat_tau;
+        return mirostat_v2_sample(logits, vocab_size,
+                                  params_.mirostat_tau, params_.mirostat_eta,
+                                  mu_, rng_, scratch_);
     }
 
     // 3. Top-k.

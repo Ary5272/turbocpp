@@ -65,6 +65,12 @@ public:
     ModelWeights& weights() noexcept { return weights_; }
     const ModelWeights& weights() const noexcept { return weights_; }
 
+    // Embedding mode: returns the final-norm hidden state of the most
+    // recent forward() (size hidden_dim). Use this to extract sentence
+    // embeddings without paying the LM-head matmul. Pool across tokens
+    // externally (mean / last-token / CLS).
+    const float* last_hidden() const noexcept { return xb_.data(); }
+
 private:
     ModelConfig cfg_;
     ModelWeights weights_;
