@@ -51,6 +51,7 @@ cmake --build build -j
 
 Targets:
 - `turbocpp` — CLI (load model, prompt, stream output)
+- `turbocpp-server` — OpenAI-compatible HTTP server
 - `turbocpp-bench` — kernel microbenchmarks
 - `turbocpp-tests` — unit tests (`ctest --test-dir build`)
 
@@ -144,38 +145,51 @@ See `quant/hadamard.cpp` and `quant/tq.cpp`.
 
 | Feature | TurboCPP | llama.cpp |
 |---|:---:|:---:|
-| AVX2/FMA matmul | ✓ | ✓ |
-| AVX-512 / NEON | ✗ | ✓ |
-| GPU backends | ✗ (CPU-only by design) | ✓ |
-| Q4_0 / Q8_0 / fp16 | ✓ | ✓ |
-| K-quants (Q4_K_M, Q6_K) | ✗ | ✓ |
-| **TurboQuant (Hadamard)** | ✓ | ✗ |
-| KV-cache 4-bit / 3-bit | ✓ | partial (Q8 only) |
+| AVX2 + FMA matmul | ✓ | ✓ |
+| **AVX-512** 16-wide FMA dispatch | ✓ | ✓ |
+| ARM NEON / Apple Silicon | ✗ (roadmap) | ✓ |
+| GPU backends (CUDA / Metal / Vulkan) | ✗ (CPU by design) | ✓ |
+| Q4_0 / Q8_0 / fp16 / BF16 | ✓ | ✓ |
+| **K-quants Q4_K_M / Q6_K / Q8_K** | ✓ | ✓ |
+| I-quants (IQ2 / IQ3 / IQ4) | ✗ (roadmap) | ✓ |
+| **TurboQuant (Hadamard rotation)** | ✓ | ✗ |
+| KV-cache 4-bit / 3-bit | ✓ | partial |
+| **GGUF v3 reader** (drop-in llama.cpp models) | ✓ | ✓ |
 | GQA / MQA | ✓ | ✓ |
-| YaRN / NTK / linear RoPE | ✓ | ✓ |
-| Mirostat v2 | ✓ | ✓ |
-| Top-k / top-p / min-p / repeat | ✓ | ✓ |
-| Logit bias | ✓ | ✓ |
+| **MoE / Mixtral** | ✓ | ✓ |
+| Sliding window + context shift | ✓ | ✓ |
+| ALiBi positional encoding | ✓ | ✓ |
+| YaRN / NTK / linear RoPE scaling | ✓ | ✓ |
+| Top-k / top-p / min-p / repeat penalty | ✓ | ✓ |
+| **Typical-p / tail-free / dynatemp** | ✓ | ✓ |
+| **Mirostat v1 + v2** | ✓ | ✓ |
+| Logit bias / banned tokens | ✓ | ✓ |
+| **Classifier-free guidance** | ✓ | ✓ |
 | Stop sequences | ✓ | ✓ |
-| Chat templates (LLaMA-3, ChatML, Mistral) | ✓ | ✓ |
-| Prompt cache to disk | ✓ (save) | ✓ |
+| **Beam search** | ✓ | ✓ |
+| **Speculative decoding** | ✓ | ✓ |
+| **Grammar / JSON-mode sampling** | ✓ (JSON SM) | ✓ (full GBNF) |
+| Chat templates (LLaMA-3, ChatML, Mistral, LLaMA-2) | ✓ | ✓ |
+| **LoRA adapter merge** | ✓ | ✓ |
+| Prompt cache to disk | ✓ | ✓ |
 | Embeddings mode | ✓ | ✓ |
-| Speculative decoding | ✗ | ✓ |
-| Beam search | ✗ | ✓ |
-| Grammar / JSON mode | ✗ | ✓ |
-| HTTP server | ✗ | ✓ |
-| GGUF v3 read | ✗ (own format) | ✓ |
+| **HTTP server (OpenAI /v1/completions)** | ✓ | ✓ |
+| LLaVA / multi-modal | ✗ (roadmap) | ✓ |
 
 ## Roadmap
 
-- AVX-512 / VNNI dispatch
-- K-quants (Q4_K_M super-blocks)
-- GGUF v3 reader (drop-in for llama.cpp models)
+Already shipped above. Still on the list:
+- VNNI / AMX (Sapphire Rapids) dispatch
+- I-quants (IQ2_XXS, IQ4_NL — codebook-based formats)
 - Flash-attention-style fused softmax+QK+AV
-- Batched prefill (T-major matmul)
-- Speculative decoding
-- HTTP server (OpenAI-compatible API)
-- Grammar-constrained sampling (BNF)
+- Batched prefill (T-major matmul for prompt processing)
+- Tree speculative decoding (Medusa heads)
+- Continuous batching for the HTTP server
+- LLaVA / multimodal
+- ARM NEON / Apple Silicon native dispatch
+- SSE / streaming for /v1/completions
+- /v1/embeddings endpoint
+- Full GBNF grammar (not just JSON state machine)
 
 ## License
 

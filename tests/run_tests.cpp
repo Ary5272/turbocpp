@@ -12,8 +12,10 @@
 #include "../quant/fp16.h"
 #include "../quant/hadamard.h"
 #include "../quant/tq.h"
+#include "../quant/qk.h"
 #include "../quant/kv_quant.h"
 #include "../runtime/chat.h"
+#include "../runtime/grammar.h"
 #include "../tokenizer/bpe.h"
 
 #include <algorithm>
@@ -243,6 +245,48 @@ static void test_stop_matcher() {
     CHECK(m.matched_seq() == 0, "wrong stop matched");
 }
 
+static void test_q6k_q8k_q4k_roundtrip() {
+    const size_t N = 256;
+    AlignedBuffer<float> x(N), y(N);
+    std::mt19937 rng(202);
+    std::normal_distribution<float> d(0.0f, 0.5f);
+    for (size_t i = 0; i < N; ++i) x.data()[i] = d(rng);
+
+    // Q6_K
+    {
+        std::vector<Q6KBlock> b(qk_num_blocks(N));
+        q6k_quantize(x.data(), b.data(), N);
+        q6k_dequantize(b.data(), y.data(), N);
+        float err = 0;
+        for (size_t i = 0; i < N; ++i) err = std::max(err, std::fabs(x.data()[i]-y.data()[i]));
+        CHECK(err < 0.05f, "q6k err: %.3e", err);
+    }
+    // Q8_K
+    {
+        std::vector<Q8KBlock> b(qk_num_blocks(N));
+        q8k_quantize(x.data(), b.data(), N);
+        q8k_dequantize(b.data(), y.data(), N);
+        float err = 0;
+        for (size_t i = 0; i < N; ++i) err = std::max(err, std::fabs(x.data()[i]-y.data()[i]));
+        CHECK(err < 0.02f, "q8k err: %.3e", err);
+    }
+    // Q4_K_M (asymmetric, more quant noise)
+    {
+        std::vector<Q4KBlock> b(qk_num_blocks(N));
+        q4k_quantize(x.data(), b.data(), N);
+        q4k_dequantize(b.data(), y.data(), N);
+        float err = 0;
+        for (size_t i = 0; i < N; ++i) err = std::max(err, std::fabs(x.data()[i]-y.data()[i]));
+        CHECK(err < 0.25f, "q4k err: %.3e", err);
+    }
+}
+
+static void test_json_grammar() {
+    JsonGrammar g;
+    g.observe("{\"name\":\"alice\",\"age\":30}");
+    CHECK(g.finished(), "json grammar should be finished after balanced object");
+}
+
 int main() {
     test_matmul_tiers_agree();
     test_softmax_sums_to_one();
@@ -257,6 +301,8 @@ int main() {
     test_tq_matmul();
     test_chat_template_llama3();
     test_stop_matcher();
+    test_q6k_q8k_q4k_roundtrip();
+    test_json_grammar();
 
     if (g_failed == 0) {
         std::printf("ALL TESTS PASSED\n");

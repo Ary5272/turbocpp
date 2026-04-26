@@ -74,6 +74,7 @@ set(TURBOCPP_SOURCES
     model/embeddings.cpp
     model/attention.cpp
     model/transformer.cpp
+    model/moe.cpp
     kv_cache/kv_cache.cpp
     quant/q4.cpp
     quant/q8.cpp
@@ -84,12 +85,16 @@ set(TURBOCPP_SOURCES
     quant/kv_quant.cpp
     loader/gguf.cpp
     loader/gguf_v3.cpp
+    loader/lora.cpp
     tokenizer/bpe.cpp
     runtime/thread_pool.cpp
     runtime/sampling.cpp
     runtime/inference.cpp
     runtime/parallel_ops.cpp
     runtime/chat.cpp
+    runtime/grammar.cpp
+    runtime/speculative.cpp
+    runtime/beam_search.cpp
 )
 
 add_library(turbocpp_core STATIC ${TURBOCPP_SOURCES})
@@ -106,6 +111,13 @@ target_link_libraries(turbocpp PRIVATE turbocpp_core)
 
 add_executable(turbocpp-bench benchmark.cpp)
 target_link_libraries(turbocpp-bench PRIVATE turbocpp_core)
+
+# HTTP server: requires sockets (Ws2_32 on Windows; nothing extra on POSIX)
+add_executable(turbocpp-server server.cpp)
+target_link_libraries(turbocpp-server PRIVATE turbocpp_core)
+if(WIN32)
+    target_link_libraries(turbocpp-server PRIVATE Ws2_32)
+endif()
 
 enable_testing()
 add_executable(turbocpp-tests tests/run_tests.cpp)

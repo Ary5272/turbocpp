@@ -102,19 +102,42 @@ static inline float hsum256(__m256 v) {
 // Core micro-kernel: compute C[m, n0..n0+3] for one m, accumulating over
 // the full K dimension. Four N accumulators share each A load — this is the
 // key reuse that pulls throughput past 1 FMA/cycle.
+//
+// On AVX-512 hardware (Skylake-X, Ice Lake, Zen 4, Sapphire Rapids), we
+// process 16 floats per FMA instead of 8 — ~2× throughput on those CPUs.
 static inline void microkernel_1x4(const float* a_row, const float* B,
                                    float* c_row, size_t n0, size_t K) {
-    __m256 acc0 = _mm256_setzero_ps();
-    __m256 acc1 = _mm256_setzero_ps();
-    __m256 acc2 = _mm256_setzero_ps();
-    __m256 acc3 = _mm256_setzero_ps();
-
     const float* b0 = B + (n0 + 0) * K;
     const float* b1 = B + (n0 + 1) * K;
     const float* b2 = B + (n0 + 2) * K;
     const float* b3 = B + (n0 + 3) * K;
 
     size_t k = 0;
+    float s0 = 0, s1 = 0, s2 = 0, s3 = 0;
+
+#if defined(__AVX512F__)
+    // 16-wide pass first.
+    __m512 a512_0 = _mm512_setzero_ps();
+    __m512 a512_1 = _mm512_setzero_ps();
+    __m512 a512_2 = _mm512_setzero_ps();
+    __m512 a512_3 = _mm512_setzero_ps();
+    for (; k + 16 <= K; k += 16) {
+        __m512 a = _mm512_loadu_ps(a_row + k);
+        a512_0 = _mm512_fmadd_ps(a, _mm512_loadu_ps(b0 + k), a512_0);
+        a512_1 = _mm512_fmadd_ps(a, _mm512_loadu_ps(b1 + k), a512_1);
+        a512_2 = _mm512_fmadd_ps(a, _mm512_loadu_ps(b2 + k), a512_2);
+        a512_3 = _mm512_fmadd_ps(a, _mm512_loadu_ps(b3 + k), a512_3);
+    }
+    s0 = _mm512_reduce_add_ps(a512_0);
+    s1 = _mm512_reduce_add_ps(a512_1);
+    s2 = _mm512_reduce_add_ps(a512_2);
+    s3 = _mm512_reduce_add_ps(a512_3);
+#endif
+
+    __m256 acc0 = _mm256_setzero_ps();
+    __m256 acc1 = _mm256_setzero_ps();
+    __m256 acc2 = _mm256_setzero_ps();
+    __m256 acc3 = _mm256_setzero_ps();
     for (; k + 8 <= K; k += 8) {
         __m256 a = _mm256_loadu_ps(a_row + k);
         __m256 v0 = _mm256_loadu_ps(b0 + k);
@@ -126,11 +149,10 @@ static inline void microkernel_1x4(const float* a_row, const float* B,
         acc2 = TCPP_FMADD(a, v2, acc2);
         acc3 = TCPP_FMADD(a, v3, acc3);
     }
-
-    float s0 = hsum256(acc0);
-    float s1 = hsum256(acc1);
-    float s2 = hsum256(acc2);
-    float s3 = hsum256(acc3);
+    s0 += hsum256(acc0);
+    s1 += hsum256(acc1);
+    s2 += hsum256(acc2);
+    s3 += hsum256(acc3);
 
     // Scalar tail for K not divisible by 8.
     for (; k < K; ++k) {
