@@ -65,6 +65,13 @@ public:
         return 2 * n_layers_ * n_heads_ * max_seq_len_ * head_dim_ * sizeof(float);
     }
 
+    // Drop the oldest `n_drop` positions, sliding the rest down. After the
+    // call, cur_len -= n_drop. Used for context shifting (rolling window
+    // when generating beyond max_seq_len). Does NOT compensate for RoPE
+    // absolute positions — caller may need to re-rotate K, or rely on
+    // sliding-window attention which is position-agnostic in practice.
+    void shift_left(size_t n_drop);
+
     // Snapshot the live portion (K, V up to cur_len) to disk along with
     // shape metadata + a token-prompt hash for re-validation. Returns true
     // on success. Meant for prompt-cache use (re-running the same long

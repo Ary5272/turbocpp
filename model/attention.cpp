@@ -88,26 +88,49 @@ void Attention::forward(const float* x_in, float* x_out, size_t pos, size_t laye
     matmul_parallel(x_in, Wk_, k_proj_.data(), 1, KV, H);
     matmul_parallel(x_in, Wv_, v_proj_.data(), 1, KV, H);
 
-    // (2) RoPE on Q (all n_heads) and K (n_kv_heads).
-    rope.apply(q_.data(),      n_heads_,    pos);
-    rope.apply(k_proj_.data(), n_kv_heads_, pos);
+    // (2) Position encoding: RoPE if not using ALiBi.
+    if (!use_alibi_) {
+        rope.apply(q_.data(),      n_heads_,    pos);
+        rope.apply(k_proj_.data(), n_kv_heads_, pos);
+    }
 
     // (3) Append K/V into the KV cache (sized for n_kv_heads).
     cache.append(layer, pos, k_proj_.data(), v_proj_.data());
 
     // (4) Per-head attention. Query head h reads from KV head (h / heads_per_kv).
     const float scale = 1.0f / std::sqrt(float(head_dim_));
+    // Sliding window: only attend to the last `sliding_window_` positions.
+    // start = max(0, pos - sliding_window + 1) → effective T_eff = pos - start + 1.
+    const size_t start = (sliding_window_ > 0 && pos + 1 > sliding_window_)
+                         ? (pos + 1 - sliding_window_) : 0;
+    const size_t T_eff = T - start;
+
+    // ALiBi slope per head: m_h = 2^(-8 h / n_heads). Bias added to score
+    // BEFORE softmax: score[t] += -m_h * (pos - t).
+    auto alibi_slope = [&](size_t h) -> float {
+        return std::exp2(-8.0f * float(h + 1) / float(n_heads_));
+    };
+
     parallel_heads(n_heads_, [&](size_t h) {
         const size_t kv_h = h / heads_per_kv;
         const float* q_h  = q_.data() + h * head_dim_;
-        const float* K_h  = cache.k_head(layer, kv_h);
-        const float* V_h  = cache.v_head(layer, kv_h);
+        const float* K_h  = cache.k_head(layer, kv_h) + start * head_dim_;
+        const float* V_h  = cache.v_head(layer, kv_h) + start * head_dim_;
         float* out_h      = attn_out_.data() + h * head_dim_;
         float* scores_buf = scores_.data()   + h * cache.max_seq_len();
 
-        qk_scores(q_h, K_h, scores_buf, T, head_dim_, scale);
-        softmax_inplace(scores_buf, T);
-        av_accumulate(scores_buf, V_h, out_h, T, head_dim_);
+        qk_scores(q_h, K_h, scores_buf, T_eff, head_dim_, scale);
+
+        if (use_alibi_) {
+            const float m = alibi_slope(h);
+            for (size_t t = 0; t < T_eff; ++t) {
+                const size_t abs_t = start + t;
+                scores_buf[t] -= m * float(pos - abs_t);
+            }
+        }
+
+        softmax_inplace(scores_buf, T_eff);
+        av_accumulate(scores_buf, V_h, out_h, T_eff, head_dim_);
     });
 
     // (5) Output projection.

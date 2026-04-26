@@ -77,11 +77,13 @@ set(TURBOCPP_SOURCES
     kv_cache/kv_cache.cpp
     quant/q4.cpp
     quant/q8.cpp
+    quant/qk.cpp
     quant/fp16.cpp
     quant/hadamard.cpp
     quant/tq.cpp
     quant/kv_quant.cpp
     loader/gguf.cpp
+    loader/gguf_v3.cpp
     tokenizer/bpe.cpp
     runtime/thread_pool.cpp
     runtime/sampling.cpp

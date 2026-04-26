@@ -19,6 +19,23 @@ void KVCache::init(size_t n_layers, size_t n_heads, size_t head_dim, size_t max_
     std::memset(v_.data(), 0, total * sizeof(float));
 }
 
+void KVCache::shift_left(size_t n_drop) {
+    if (n_drop == 0 || cur_len_ == 0) return;
+    if (n_drop >= cur_len_) { cur_len_ = 0; return; }
+    const size_t keep = cur_len_ - n_drop;
+    const size_t row_bytes = head_dim_ * sizeof(float);
+    for (size_t L = 0; L < n_layers_; ++L) {
+        for (size_t h = 0; h < n_heads_; ++h) {
+            float* k = k_head(L, h);
+            float* v = v_head(L, h);
+            // memmove safe (overlapping, dst < src).
+            std::memmove(k, k + n_drop * head_dim_, keep * row_bytes);
+            std::memmove(v, v + n_drop * head_dim_, keep * row_bytes);
+        }
+    }
+    cur_len_ = keep;
+}
+
 void KVCache::append(size_t layer, size_t pos, const float* k_proj, const float* v_proj) {
     TCPP_CHECK(pos < max_seq_len_, "kv_cache append pos %zu exceeds max %zu", pos, max_seq_len_);
     for (size_t h = 0; h < n_heads_; ++h) {

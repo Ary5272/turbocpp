@@ -30,9 +30,22 @@ struct SamplingParams {
     // Mirostat v2 (Basu et al. 2020): adaptively control the perplexity
     // (surprisal) of generated text. 0 = off; mirostat=2 enables. tau is
     // target surprisal in nats; eta is learning rate.
-    int      mirostat      = 0;        // 0=off, 2=on
+    int      mirostat      = 0;        // 0=off, 1=v1, 2=v2
     float    mirostat_tau  = 5.0f;
     float    mirostat_eta  = 0.1f;
+
+    // Locally typical sampling (Meister et al. 2023). 1.0 = disabled.
+    // Keeps tokens with probability "typical" of the entropy.
+    float    typical_p     = 1.0f;
+
+    // Tail-free sampling (Frans 2020). 1.0 = disabled. Filters by
+    // cumulative second-derivative of sorted probs.
+    float    tail_free_z   = 1.0f;
+
+    // Dynamic temperature (Cyberus 2023): scales temperature by entropy.
+    // 0 = disabled. When enabled, effective_temp = temperature ± dyna_range.
+    float    dynatemp_range = 0.0f;
+    float    dynatemp_exp   = 1.0f;
 
     // Per-token additive bias on logits. Set bias[id] = -INF to ban a
     // token, +inf to force-pin it. Applied before temperature.
@@ -63,5 +76,14 @@ private:
     // Mirostat state: μ ≈ 2τ at start; updated after each sample.
     float mu_ = 0.0f;
 };
+
+// Classifier-free guidance: combines logits from two forward passes
+// (positive + negative prompt). Caller runs both forwards and mixes:
+//
+//     logits_out = logits_neg + cfg_scale * (logits_pos - logits_neg)
+//
+// Apply BEFORE sampling. cfg_scale > 1 amplifies the positive prompt.
+void cfg_mix_logits(float* logits_pos, const float* logits_neg,
+                    float cfg_scale, size_t vocab_size);
 
 } // namespace turbocpp

@@ -29,6 +29,8 @@ void Model::init(const ModelConfig& cfg) {
                "model: n_heads (%zu) must be divisible by n_kv_heads (%zu)",
                cfg.n_heads, cfg.n_kv_heads);
     attn_.init(cfg.n_heads, cfg.n_kv_heads, cfg.head_dim);
+    attn_.set_sliding_window(cfg.sliding_window);
+    attn_.set_alibi(cfg.use_alibi);
 
     weights_.layers.resize(cfg.n_layers);
 }

@@ -21,6 +21,10 @@ public:
     void set_weights(const float* Wq, const float* Wk,
                      const float* Wv, const float* Wo);
 
+    // Per-call modifiers. Set before forward().
+    void set_sliding_window(size_t w) { sliding_window_ = w; }
+    void set_alibi(bool b) { use_alibi_ = b; }
+
     void forward(const float* x_in, float* x_out, size_t pos, size_t layer,
                  KVCache& cache, const RopeTables& rope);
 
@@ -37,12 +41,14 @@ private:
     const float* Wv_ = nullptr;
     const float* Wo_ = nullptr;
 
-    AlignedBuffer<float> q_;        // [n_heads    * head_dim]
-    AlignedBuffer<float> k_proj_;   // [n_kv_heads * head_dim]
-    AlignedBuffer<float> v_proj_;   // [n_kv_heads * head_dim]
-    AlignedBuffer<float> scores_;   // [n_heads * max_seq_len]
-    AlignedBuffer<float> attn_out_; // [n_heads * head_dim]
+    AlignedBuffer<float> q_;
+    AlignedBuffer<float> k_proj_;
+    AlignedBuffer<float> v_proj_;
+    AlignedBuffer<float> scores_;
+    AlignedBuffer<float> attn_out_;
     size_t scores_cap_ = 0;
+    size_t sliding_window_ = 0;
+    bool   use_alibi_ = false;
 };
 
 } // namespace turbocpp

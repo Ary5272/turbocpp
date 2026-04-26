@@ -25,6 +25,15 @@ struct ModelConfig {
     float  rms_eps      = 1e-5f;
     float  rope_base    = 10000.0f;
 
+    // Sliding-window attention (Mistral-7B uses 4096). 0 = disabled
+    // (full attention). When set, position t scores only against
+    // [pos - sliding_window + 1, pos].
+    size_t sliding_window = 0;
+
+    // ALiBi: skip RoPE and use additive linear position biases. When true,
+    // RoPE is not applied to Q/K. Used by BLOOM, MPT, Falcon.
+    bool   use_alibi = false;
+
     // Derived
     size_t kv_dim()       const noexcept { return n_kv_heads * head_dim; }
     size_t heads_per_kv() const noexcept { return n_heads / n_kv_heads; }

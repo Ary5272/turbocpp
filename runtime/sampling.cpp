@@ -103,6 +103,71 @@ int32_t Sampler::sample(float* logits, size_t vocab_size) {
                                   mu_, rng_, scratch_);
     }
 
+    // Mirostat v1 (Basu 2020 original). Estimates Zipf parameter s from
+    // top-2 ranks; picks k = (s * tau)^eta and renormalizes.
+    if (params_.mirostat == 1) {
+        if (mu_ <= 0.0f) mu_ = 2.0f * params_.mirostat_tau;
+        // softmax then sort.
+        float maxv = logits[0];
+        for (size_t i = 1; i < vocab_size; ++i) if (logits[i] > maxv) maxv = logits[i];
+        float ssum = 0;
+        for (size_t i = 0; i < vocab_size; ++i) { logits[i] = std::exp(logits[i] - maxv); ssum += logits[i]; }
+        for (size_t i = 0; i < vocab_size; ++i) logits[i] /= ssum;
+
+        scratch_.resize(vocab_size);
+        for (size_t i = 0; i < vocab_size; ++i) scratch_[i] = {logits[i], int32_t(i)};
+        std::sort(scratch_.begin(), scratch_.end(),
+                  [](const auto& a, const auto& b) { return a.first > b.first; });
+        // Zipf exponent estimate from top-2.
+        float p1 = std::max(scratch_[0].first, 1e-9f);
+        float p2 = std::max(scratch_[std::min<size_t>(1, vocab_size-1)].first, 1e-12f);
+        float s = std::log(p1 / p2) / std::log(2.0f);
+        size_t k = std::max<size_t>(1, size_t(std::pow(s * mu_, params_.mirostat_eta)));
+        k = std::min(k, vocab_size);
+        // Sample within top-k.
+        float ksum = 0;
+        for (size_t i = 0; i < k; ++i) ksum += scratch_[i].first;
+        std::uniform_real_distribution<float> uni(0, 1);
+        float r = uni(rng_) * ksum;
+        float cumk = 0;
+        int32_t pick = scratch_[0].second;
+        float pick_p = scratch_[0].first;
+        for (size_t i = 0; i < k; ++i) {
+            cumk += scratch_[i].first;
+            if (r < cumk) { pick = scratch_[i].second; pick_p = scratch_[i].first; break; }
+        }
+        const float observed = -std::log(std::max(pick_p, 1e-9f));
+        mu_ -= params_.mirostat_eta * (observed - params_.mirostat_tau);
+        if (mu_ < 0) mu_ = 0;
+        return pick;
+    }
+
+    // Dynamic temperature: rescale temperature by softmax entropy.
+    // High-entropy distribution → lower temp (more focused), low-entropy →
+    // higher temp (preserves diversity). Applied AFTER static temperature.
+    if (params_.dynatemp_range > 0.0f) {
+        // Compute entropy in nats over a softmax(logits). Use a copy so we
+        // don't mutate logits twice.
+        float maxv = logits[0];
+        for (size_t i = 1; i < vocab_size; ++i) if (logits[i] > maxv) maxv = logits[i];
+        float s2 = 0;
+        for (size_t i = 0; i < vocab_size; ++i) s2 += std::exp(logits[i] - maxv);
+        const float lse = std::log(s2) + maxv;
+        float H = 0;
+        for (size_t i = 0; i < vocab_size; ++i) {
+            float p = std::exp(logits[i] - lse);
+            if (p > 0) H -= p * std::log(p);
+        }
+        const float Hmax = std::log(float(vocab_size));
+        // Normalize entropy to [0, 1] and apply curve.
+        float norm = (Hmax > 0) ? std::pow(H / Hmax, params_.dynatemp_exp) : 0;
+        // Effective temp = base + range * (2*norm - 1) → in [base-range, base+range].
+        const float base = params_.temperature;
+        const float eff_t = std::max(0.05f, base + params_.dynatemp_range * (2 * norm - 1));
+        // Re-scale logits by eff_t / base (we already divided by base in step 2).
+        if (base > 0 && eff_t > 0) vec_scale(logits, base / eff_t, vocab_size);
+    }
+
     // 3. Top-k.
     if (params_.top_k > 0 && size_t(params_.top_k) < vocab_size) {
         const size_t k = size_t(params_.top_k);
@@ -119,6 +184,58 @@ int32_t Sampler::sample(float* logits, size_t vocab_size) {
 
     // 4. Softmax → probs.
     softmax_inplace(logits, vocab_size);
+
+    // 4b. Tail-free sampling (Frans 2020). Sort probs desc, take 2nd diff
+    // |p[i+1] - 2*p[i] + p[i-1]| normalized cumulative; cut at z.
+    if (params_.tail_free_z < 1.0f && params_.tail_free_z > 0.0f && vocab_size > 3) {
+        scratch_.resize(vocab_size);
+        for (size_t i = 0; i < vocab_size; ++i) scratch_[i] = {logits[i], int32_t(i)};
+        std::sort(scratch_.begin(), scratch_.end(),
+                  [](const auto& a, const auto& b) { return a.first > b.first; });
+        std::vector<float> d2(vocab_size, 0);
+        float total = 0;
+        for (size_t i = 1; i + 1 < vocab_size; ++i) {
+            d2[i] = std::fabs(scratch_[i+1].first - 2*scratch_[i].first + scratch_[i-1].first);
+            total += d2[i];
+        }
+        if (total > 0) {
+            float cum = 0;
+            size_t cut = vocab_size;
+            for (size_t i = 1; i + 1 < vocab_size; ++i) {
+                cum += d2[i] / total;
+                if (cum >= params_.tail_free_z) { cut = i + 1; break; }
+            }
+            for (size_t i = cut; i < vocab_size; ++i)
+                logits[size_t(scratch_[i].second)] = 0.0f;
+            float ns = 0; for (size_t i = 0; i < vocab_size; ++i) ns += logits[i];
+            if (ns > 0) vec_scale(logits, 1.0f / ns, vocab_size);
+        }
+    }
+
+    // 4c. Locally typical sampling (Meister et al. 2023). Filters tokens
+    // whose surprisal is far from the entropy.
+    if (params_.typical_p < 1.0f && params_.typical_p > 0.0f) {
+        float H = 0;
+        for (size_t i = 0; i < vocab_size; ++i)
+            if (logits[i] > 0) H -= logits[i] * std::log(logits[i]);
+        scratch_.resize(vocab_size);
+        for (size_t i = 0; i < vocab_size; ++i) {
+            float surprisal = (logits[i] > 0) ? -std::log(logits[i]) : 1e30f;
+            scratch_[i] = {std::fabs(surprisal - H), int32_t(i)};
+        }
+        std::sort(scratch_.begin(), scratch_.end(),
+                  [](const auto& a, const auto& b) { return a.first < b.first; });
+        float cum = 0;
+        size_t cut = vocab_size;
+        for (size_t i = 0; i < vocab_size; ++i) {
+            cum += logits[size_t(scratch_[i].second)];
+            if (cum >= params_.typical_p) { cut = i + 1; break; }
+        }
+        for (size_t i = cut; i < vocab_size; ++i)
+            logits[size_t(scratch_[i].second)] = 0.0f;
+        float ns = 0; for (size_t i = 0; i < vocab_size; ++i) ns += logits[i];
+        if (ns > 0) vec_scale(logits, 1.0f / ns, vocab_size);
+    }
 
     // 5. Min-p (drop probs below min_p × max_p; renormalize).
     if (params_.min_p > 0.0f) {
@@ -165,6 +282,15 @@ int32_t Sampler::sample(float* logits, size_t vocab_size) {
         if (logits[i] > 0.0f) return int32_t(i);
     }
     return 0;
+}
+
+void cfg_mix_logits(float* logits_pos, const float* logits_neg,
+                    float cfg_scale, size_t vocab_size) {
+    // logits_pos = logits_neg + scale * (logits_pos - logits_neg)
+    //            = scale*logits_pos + (1-scale)*logits_neg
+    for (size_t i = 0; i < vocab_size; ++i) {
+        logits_pos[i] = cfg_scale * logits_pos[i] + (1.0f - cfg_scale) * logits_neg[i];
+    }
 }
 
 } // namespace turbocpp
