@@ -67,10 +67,9 @@ def test_block_hadamard_reduces_max_abs():
     )
 
 
-def test_rotate_tiny_model_dot_product_invariant():
-    """End-to-end smoke: rotate a tiny linear-stack and verify outputs match."""
-    from turboquant.turboquant import apply_residual_rotation, fuse_norms_into_next
-
+def _build_tiny_model_unit_norms():
+    """Tiny LLaMA-shaped model with γ=1 everywhere — used for the
+    pure-rotation invariance test where fuse_norms is a no-op."""
     class TinyAttn(torch.nn.Module):
         def __init__(self, d, dk):
             super().__init__()
@@ -89,9 +88,10 @@ def test_rotate_tiny_model_dot_product_invariant():
     class TinyLayer(torch.nn.Module):
         def __init__(self, d, dk, df):
             super().__init__()
-            self.input_layernorm = torch.nn.LayerNorm(d, elementwise_affine=True)
+            # γ-only norm placeholder; γ pre-set to 1 so fuse_norms is a no-op.
+            self.input_layernorm = torch.nn.LayerNorm(d, elementwise_affine=True, bias=False)
             self.self_attn = TinyAttn(d, dk)
-            self.post_attention_layernorm = torch.nn.LayerNorm(d, elementwise_affine=True)
+            self.post_attention_layernorm = torch.nn.LayerNorm(d, elementwise_affine=True, bias=False)
             self.mlp = TinyMLP(d, df)
 
     class TinyModel(torch.nn.Module):
@@ -100,28 +100,60 @@ def test_rotate_tiny_model_dot_product_invariant():
             self.model = torch.nn.Module()
             self.model.embed_tokens = torch.nn.Embedding(32, 256)
             self.model.layers = torch.nn.ModuleList([TinyLayer(256, 256, 384)])
-            self.model.norm = torch.nn.LayerNorm(256, elementwise_affine=True)
+            self.model.norm = torch.nn.LayerNorm(256, elementwise_affine=True, bias=False)
             self.lm_head = torch.nn.Linear(256, 32, bias=False)
 
     torch.manual_seed(13)
     m = TinyModel().double()
-    # Use random γ values to make the norm-fusion path actually do work.
+    # γ = 1 everywhere → fuse_norms is a no-op → the test isolates rotation.
     for ln in [m.model.layers[0].input_layernorm,
                m.model.layers[0].post_attention_layernorm,
                m.model.norm]:
-        ln.weight.data = 0.5 + torch.rand_like(ln.weight)
+        ln.weight.data.fill_(1.0)
+    return m
+
+
+def test_rotation_preserves_embed_qproj_dot():
+    """With γ=1, rotating tok_embed (out axis) and q_proj (in axis) cancels:
+        (emb_row · H) · (q_row · H)ᵀ = emb_row · q_rowᵀ
+    """
+    from turboquant.turboquant import apply_residual_rotation
+    m = _build_tiny_model_unit_norms()
 
     x = torch.randint(0, 32, (1, 5))
-
-    # Rotation only preserves OUTPUTS for the linear pieces; LayerNorm γ
-    # absorption is a math identity. We test the residual + linear path:
-    # take embedding → q_proj → output, and check rotated version yields
-    # identical numbers.
-    pre = m.model.embed_tokens(x) @ m.model.layers[0].self_attn.q_proj.weight.t()
-    fuse_norms_into_next(m)
+    pre  = m.model.embed_tokens(x) @ m.model.layers[0].self_attn.q_proj.weight.t()
     apply_residual_rotation(m, block_size=128)
     post = m.model.embed_tokens(x) @ m.model.layers[0].self_attn.q_proj.weight.t()
-    # The Hadamard rotations on tok_embed (out axis) and q_proj (in axis)
-    # cancel: `(emb_row · H) · (H · q_row)ᵀ = emb_row · q_rowᵀ`.
     assert torch.allclose(pre, post, atol=1e-9), \
         f"rotation invariance broken: max diff {(pre - post).abs().max()}"
+
+
+def test_norm_fusion_preserves_attn_input_path():
+    """fuse_norms_into_next must preserve the value of `q_proj(γ ⊙ x)`:
+        before: y = q_proj(γ ⊙ x)
+        after:  y = (q_proj · diag(γ))(x), with γ ← 1
+    Both should give bit-identical fp64 results.
+    """
+    from turboquant.turboquant import fuse_norms_into_next
+
+    torch.manual_seed(17)
+    m = _build_tiny_model_unit_norms()
+    # Now scramble γ so fusion has real work to do.
+    for ln in [m.model.layers[0].input_layernorm,
+               m.model.layers[0].post_attention_layernorm,
+               m.model.norm]:
+        ln.weight.data = 0.5 + torch.rand_like(ln.weight).double()
+
+    x = torch.randn(1, 5, 256, dtype=torch.float64)
+    g = m.model.layers[0].input_layernorm.weight.data
+    W = m.model.layers[0].self_attn.q_proj.weight.data
+    pre = (g * x) @ W.t()      # γ ⊙ x then linear
+
+    fuse_norms_into_next(m)
+
+    g2 = m.model.layers[0].input_layernorm.weight.data
+    W2 = m.model.layers[0].self_attn.q_proj.weight.data
+    post = (g2 * x) @ W2.t()    # γ should now be 1; linear absorbed γ
+    assert torch.allclose(pre, post, atol=1e-12), \
+        f"fuse_norms_into_next changed output: max diff {(pre - post).abs().max()}"
+    assert torch.allclose(g2, torch.ones_like(g2)), "γ wasn't reset to 1"
