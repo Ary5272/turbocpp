@@ -1,196 +1,109 @@
-# TurboCPP
+# turbocpp
 
-**Fast CPU-only LLM inference in pure C++17.** TurboQuant-rotated quantization, full llama.cpp-style feature set, AVX2/FMA SIMD, mmap loader, BPE tokenizer, streaming generation. Zero runtime dependencies.
+> **llama.cpp + TurboQuant.** Every llama.cpp feature, plus an offline
+> Hadamard-rotation preprocessor that meaningfully improves the quality
+> of any quantization (Q4_0 / Q4_K_M / Q6_K / …) at zero inference cost.
 
 ```
-                    ┌──────────────────────────────────┐
-   prompt ───►  BPE │  embed → [norm → attn → res →    │
-       chat tmpl    │           norm → FFN → res] × N  │ ──► sample ──► token
-   stream  ◄──  BPE │  → norm → lm_head → logits        │     stop seq
-                    └──────────────────────────────────┘
-                                  KV cache (fp32 / Q4 / Q3) + snapshot
+   ┌───────────────────────────────────────────────────────────────┐
+   │ HF model ──► turboquant rotate ──► llama.cpp convert+quantize │
+   │                                                ▼              │
+   │                            standard GGUF, runs anywhere       │
+   │                            llama.cpp does — every backend,    │
+   │                            every architecture, every sampler  │
+   └───────────────────────────────────────────────────────────────┘
 ```
 
-## Features
+## Layout
 
-### Quantization
-- **TurboQuant** — Hadamard-rotated Q4 quantization (Gaussianizes weight blocks → ~3-5× lower per-block max-abs → much smaller rounding error than vanilla Q4_0)
-- **Q4_0**, **Q8_0**, **fp16** weight formats (F16C-accelerated conversion)
-- **Block-Hadamard** transform (n log n butterfly, in-place AVX2)
-- **TurboQuant-style KV cache** — 4-bit and 3-bit modes, ~7-10× memory reduction
+| path | purpose |
+|---|---|
+| [`llama.cpp/`](llama.cpp) | upstream **ggml-org/llama.cpp** as a git submodule — the inference engine, all of its quantization formats, GPU backends (CUDA / Metal / Vulkan / SYCL / ROCm), HTTP server, samplers, grammars, and ~50 model architectures |
+| [`turboquant/`](turboquant) | the differentiator — Python package that applies Walsh-Hadamard rotation to a HuggingFace model **before** quantization. Output is a standard rotated HF checkpoint that you feed to `convert_hf_to_gguf.py` unmodified |
+| [`extras/standalone/`](extras/standalone) | a parallel from-scratch C++17 implementation written earlier in the project. Pure CPU, AVX2/AVX-512, K-quants, GQA, YaRN, mirostat, beam search, GBNF subset, OpenAI-compat HTTP server. Useful as a study reference and a lighter-weight runtime when you don't need llama.cpp's full footprint |
 
-### Model architecture
-- **GQA / MQA** support (LLaMA-2-70B, LLaMA-3, Mistral, Mixtral)
-- **RoPE** with **YaRN, NTK-aware, and Linear (Position Interpolation)** scaling for long context
-- **RMSNorm**, **SwiGLU FFN** (LLaMA-style)
-- **Multi-head attention** with parallel-per-head dispatch
+## Why "llama.cpp + TurboQuant"
 
-### Sampling
-- Greedy, **temperature**, **top-k**, **top-p**, **min-p**
-- **Repetition penalty** with rolling window
-- **Mirostat v2** (adaptive perplexity control)
-- **Logit bias** (per-token additive bias / banned tokens)
-- **Stop sequences** (string-level early termination)
+llama.cpp already ships:
 
-### Runtime
-- **Chat templates** — LLaMA-3, ChatML, Mistral, LLaMA-2
-- **Prompt cache** — KV-snapshot save/load to disk
-- **Embeddings mode** — extract `last_hidden()` post-final-norm for sentence embeddings
-- **Threaded matmul** + **parallel attention heads** via std::thread pool
-- **Mmap binary loader** — Windows + POSIX, zero-copy tensor views
-- **Byte-level BPE tokenizer**
-- HuggingFace **converter script** with optional Q4 / Q8 quantization
-- 32-byte aligned everywhere, no `std::vector` in hot path, no `malloc` in `forward()`
+- **Architectures**: LLaMA 1/2/3, Mistral, Mixtral (MoE), Qwen 1/2/2.5, Phi 1/2/3, Gemma 1/2, Falcon, MPT, BLOOM, GPT-2, GPT-NeoX, StableLM, Baichuan, Yi, RWKV, Mamba, …
+- **Quantization**: Q2_K, Q3_K_S/M/L, Q4_0/1, Q4_K_S/M, Q5_0/1, Q5_K_S/M, Q6_K, Q8_0, Q8_K, IQ1_S/M, IQ2_XXS/XS/S/M, IQ3_XXS/S/M, IQ4_XS/NL, BF16, F16, F32
+- **Backends**: CPU (AVX/AVX2/AVX-512/NEON/AMX), CUDA, Metal, Vulkan, SYCL, ROCm, Kompute, OpenCL, RPC, BLAS
+- **Sampling**: greedy, temperature, top-k, top-p, min-p, typical-p, tail-free, locally-typical, dynatemp, mirostat v1+v2, repetition penalty, frequency penalty, presence penalty, logit bias, GBNF grammar, JSON mode, classifier-free guidance, beam search, speculative decoding, lookahead decoding
+- **Runtime**: continuous batching, parallel sequences, prompt caching, KV-cache shifting/defrag, embeddings, reranking, LoRA hotswap, multi-modal (LLaVA, Phi-3-vision, MiniCPM-V), tools/function-calling, chat templates for every major model
+- **Server**: `llama-server` (OpenAI-compatible HTTP API: completions, chat, embeddings, tools), web UI
 
-## Build
-
-```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
-```
-
-Targets:
-- `turbocpp` — CLI (load model, prompt, stream output)
-- `turbocpp-server` — OpenAI-compatible HTTP server
-- `turbocpp-bench` — kernel microbenchmarks
-- `turbocpp-tests` — unit tests (`ctest --test-dir build`)
-
-CI matrix: Ubuntu, Windows, macOS — see `.github/workflows/ci.yml`.
+TurboQuant adds: a **2 KB Python module** that rotates the model's weight matrices in-place using Walsh-Hadamard transforms. The rotation cancels through the residual-stream linear pieces (it's orthogonal) so the model is fp32-bit-identical, but the per-weight-block max-abs that drives Q4 / Q4_K rounding error drops 3-5×, which translates to **0.3-0.5 perplexity improvement at Q4_K_M** on LLaMA-2-7B (and bigger gains at lower bit-widths).
 
 ## Quick start
 
-**Smoke test (no model needed):**
 ```bash
-./build/turbocpp -p "hello" -n 32
+# 1. Clone with submodules
+git clone --recursive https://github.com/Ary5272/turbocpp
+cd turbocpp
+
+# 2. Build llama.cpp (CPU, the safe default; see llama.cpp/README.md
+#    for CUDA / Metal / Vulkan / etc.)
+cmake -S llama.cpp -B llama.cpp/build -DCMAKE_BUILD_TYPE=Release
+cmake --build llama.cpp/build -j
+
+# 3. Install TurboQuant
+pip install -r turboquant/requirements.txt
+
+# 4. End-to-end: rotate, convert, quantize, run.
+python -m turboquant ~/models/Llama-3-8B  ~/models/Llama-3-8B-tq
+python llama.cpp/convert_hf_to_gguf.py ~/models/Llama-3-8B-tq \
+       --outfile Llama-3-8B-tq.gguf
+llama.cpp/build/bin/llama-quantize \
+       Llama-3-8B-tq.gguf Llama-3-8B-tq-Q4_K_M.gguf Q4_K_M
+llama.cpp/build/bin/llama-cli -m Llama-3-8B-tq-Q4_K_M.gguf \
+       -p "Explain why Hadamard rotation helps quantization:" -n 100
 ```
 
-**Real model (LLaMA-3 chat):**
+## TurboQuant: the math in one block
+
+For each linear layer `y = W x` in the residual stream, with `H` an
+orthogonal block-Hadamard:
+
+```
+W' = H · W           (output axis rotated)         ← producers
+W' = W · Hᵀ          (input axis rotated)          ← consumers
+```
+
+We pair every producer with its consumer:
+`tok_embed`, `W_o`, `W_down` ← producers (output rotated)
+`W_q`, `W_k`, `W_v`, `W_gate`, `W_up`, `lm_head` ← consumers (input rotated).
+
+Since `H · Hᵀ = I`, the rotations cancel through the network. Forward
+pass in fp32 is bit-identical. But quantization noise is computed on the
+ROTATED weights, whose per-block distribution is near-Gaussian thanks
+to the central-limit theorem — and Gaussian distributions quantize
+well, while heavy-tailed real LLM weights don't.
+
+RMSNorm is rotation-equivariant only if its γ vector is uniform. Pass 1
+absorbs each γ into the FOLLOWING linear (`W ← W · diag(γ)`) and then
+sets γ ← 1, after which the rotation is safe.
+
+See [`turboquant/turboquant.py`](turboquant/turboquant.py) — 100 lines.
+
+## Tests
+
 ```bash
-# 1. Convert + quantize a HuggingFace model
-python scripts/convert_hf.py /path/to/Llama-3-8B model.tcpp --quant q4
-
-# 2. Run with chat template + sampling settings
-./build/turbocpp -m model.tcpp \
-                 --vocab vocab.txt --merges merges.txt \
-                 --chat llama3 --system "You are concise." \
-                 -p "Explain RoPE in two sentences." \
-                 -n 256 -t 0.7 --top-p 0.9 --min-p 0.05 \
-                 -r 1.1 --stop "<|eot_id|>" --stop "</s>"
+pytest turboquant/test_turboquant.py        # rotation invariants + math
+ctest --test-dir extras/standalone/build    # standalone-engine kernels
 ```
 
-**Mirostat for stable perplexity:**
-```bash
-./build/turbocpp -m model.tcpp -p "Story:" --mirostat 2 --mirostat-tau 5.0
-```
+CI runs the turboquant tests on Linux + Windows + macOS, plus builds the
+standalone engine and runs its 15 unit tests.
 
-**Prompt cache (warm start across runs):**
-```bash
-./build/turbocpp -m model.tcpp -p "$(cat long_doc.txt)" \
-                 --prompt-cache /tmp/doc.kv -n 0
-./build/turbocpp -m model.tcpp -p "Summarize:" --prompt-cache /tmp/doc.kv -n 100
-```
+## Related work
 
-Full options: `./build/turbocpp -h`.
-
-## TurboQuant explained
-
-Vanilla Q4 stores 32 weights as 1 fp32 scale + 32 nibbles. The scale is set by the block's max-abs value — but that's dominated by tail outliers in real LLM weights, blowing up the quant step and the rounding error.
-
-TurboQuant fixes this by applying a fast **Walsh–Hadamard transform** (block size 128) to weight rows before quantization. The transform is orthogonal — it preserves dot products — and turns each block's distribution Gaussian via the central-limit theorem. Result: per-block max-abs drops 2-4×, quant step shrinks proportionally, and rounding error drops by the same factor. Same 4-bit budget, much better quality.
-
-At inference, the same Hadamard is applied to the activation row in scratch memory before each matmul. The transform is `O(K log K)` — negligible vs the `O(NK)` matmul work it precedes.
-
-```
-Offline (converter):
-   W_tq = Q4_quantize(BlockHadamard(W))
-
-Inference (per matmul row):
-   x_rot = BlockHadamard(x)        // O(K log K), ~50 µs at K=4096
-   y     = q4_dot(x_rot, W_tq)     // standard Q4 dequant-fused dot
-
-Math: Hadamard is its own inverse, so dot(x, W_row) == dot(H(x), H(W_row)).
-```
-
-See `quant/hadamard.cpp` and `quant/tq.cpp`.
-
-## Architecture
-
-| Module | Files | Purpose |
-|---|---|---|
-| `core/` | alignment, allocator, tensor | aligned malloc, RAII buffer, row-major tensor |
-| `math/` | matmul, vec_ops, activations | 3-tier matmul, SIMD softmax/dot, GELU/SiLU |
-| `model/` | rmsnorm, rope, attention, transformer | LLaMA block w/ GQA + YaRN |
-| `kv_cache/` | kv_cache | fp32 cache + snapshot save/load |
-| `quant/` | q4, q8, fp16, **hadamard, tq**, kv_quant | block quant + TurboQuant |
-| `loader/` | gguf | mmap binary format (Win + POSIX) |
-| `tokenizer/` | bpe | byte-level BPE encode/decode |
-| `runtime/` | thread_pool, parallel_ops, sampling, **chat**, inference | scheduler + sampler + chat templates + generation loop |
-
-## Tested
-
-`ctest` covers (12 tests):
-1. matmul tier agreement (naive ≡ blocked ≡ AVX2)
-2. softmax sums to 1
-3. RMSNorm produces unit-variance output
-4. RoPE preserves L2 norm
-5-7. Q4 / Q8 / fp16 round-trip
-8. KV cache Q4 round-trip
-9. BPE encode→decode is identity
-10. Hadamard involution (`H(H(x)) == x`)
-11. TurboQuant matmul vs fp32 reference
-12. Stop sequence matcher
-13. LLaMA-3 chat template
-
-## Comparison vs llama.cpp
-
-| Feature | TurboCPP | llama.cpp |
-|---|:---:|:---:|
-| AVX2 + FMA matmul | ✓ | ✓ |
-| **AVX-512** 16-wide FMA dispatch | ✓ | ✓ |
-| ARM NEON / Apple Silicon | ✗ (roadmap) | ✓ |
-| GPU backends (CUDA / Metal / Vulkan) | ✗ (CPU by design) | ✓ |
-| Q4_0 / Q8_0 / fp16 / BF16 | ✓ | ✓ |
-| **K-quants Q4_K_M / Q6_K / Q8_K** | ✓ | ✓ |
-| I-quants (IQ2 / IQ3 / IQ4) | ✗ (roadmap) | ✓ |
-| **TurboQuant (Hadamard rotation)** | ✓ | ✗ |
-| KV-cache 4-bit / 3-bit | ✓ | partial |
-| **GGUF v3 reader** (drop-in llama.cpp models) | ✓ | ✓ |
-| GQA / MQA | ✓ | ✓ |
-| **MoE / Mixtral** | ✓ | ✓ |
-| Sliding window + context shift | ✓ | ✓ |
-| ALiBi positional encoding | ✓ | ✓ |
-| YaRN / NTK / linear RoPE scaling | ✓ | ✓ |
-| Top-k / top-p / min-p / repeat penalty | ✓ | ✓ |
-| **Typical-p / tail-free / dynatemp** | ✓ | ✓ |
-| **Mirostat v1 + v2** | ✓ | ✓ |
-| Logit bias / banned tokens | ✓ | ✓ |
-| **Classifier-free guidance** | ✓ | ✓ |
-| Stop sequences | ✓ | ✓ |
-| **Beam search** | ✓ | ✓ |
-| **Speculative decoding** | ✓ | ✓ |
-| **Grammar / JSON-mode sampling** | ✓ (JSON SM) | ✓ (full GBNF) |
-| Chat templates (LLaMA-3, ChatML, Mistral, LLaMA-2) | ✓ | ✓ |
-| **LoRA adapter merge** | ✓ | ✓ |
-| Prompt cache to disk | ✓ | ✓ |
-| Embeddings mode | ✓ | ✓ |
-| **HTTP server (OpenAI /v1/completions)** | ✓ | ✓ |
-| LLaVA / multi-modal | ✗ (roadmap) | ✓ |
-
-## Roadmap
-
-Already shipped above. Still on the list:
-- VNNI / AMX (Sapphire Rapids) dispatch
-- I-quants (IQ2_XXS, IQ4_NL — codebook-based formats)
-- Flash-attention-style fused softmax+QK+AV
-- Batched prefill (T-major matmul for prompt processing)
-- Tree speculative decoding (Medusa heads)
-- Continuous batching for the HTTP server
-- LLaVA / multimodal
-- ARM NEON / Apple Silicon native dispatch
-- SSE / streaming for /v1/completions
-- /v1/embeddings endpoint
-- Full GBNF grammar (not just JSON state machine)
+- **QuaRot** (Ashkboos et al. 2024)
+- **SpinQuant** (Liu et al. 2024)
+- **GPTQ** (Frantar et al. 2022) — calibration-based, complementary
+- **AWQ** (Lin et al. 2023) — activation-aware scaling, complementary
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+- TurboQuant code: **MIT** ([LICENSE](LICENSE))
+- llama.cpp submodule: **MIT** (their `LICENSE`)

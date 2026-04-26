@@ -1,8 +1,15 @@
-# Build
-build/
-build-*/
-out/
-cmake-build-*/
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+.pytest_cache/
+*.egg-info/
+
+# Build artifacts (extras/standalone)
+extras/standalone/build/
+extras/standalone/build-*/
 *.o
 *.obj
 *.a
@@ -15,42 +22,27 @@ cmake-build-*/
 *.pdb
 *.ilk
 
-# Models / artifacts
-*.tcpp
+# llama.cpp build artifacts (in submodule)
+llama.cpp/build/
+llama.cpp/build-*/
+
+# Models
 *.gguf
 *.safetensors
 *.bin
+*.tcpp
 models/
-checkpoints/
 
-# Editors / IDEs
+# Editors
 .vscode/
 .idea/
 .vs/
-*.swp
-*~
 .DS_Store
 Thumbs.db
-
-# Python
-__pycache__/
-*.pyc
-.venv/
-venv/
-env/
+*.swp
+*~
 
 # CMake
 CMakeCache.txt
 CMakeFiles/
 CMakeUserPresets.json
-cmake_install.cmake
-Makefile
-*.cmake
-!CMakeLists.txt
-
-# Coverage / profiling
-*.gcda
-*.gcno
-*.gcov
-perf.data*
-callgrind.out*
