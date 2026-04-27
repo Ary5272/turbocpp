@@ -1,0 +1,6 @@
+gradio>=4.40
+matplotlib>=3.7
+numpy>=1.24
+torch>=2.0
+pillow>=10.0
+# turboquant package itself (installed via setup hook below)

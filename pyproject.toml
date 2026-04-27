@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "turboquant"
+version = "0.2.0"
+description = "Hadamard-rotation preprocessor for LLM weights — pairs with llama.cpp"
+readme = "turboquant/README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Ary5272" }]
+keywords = ["llm", "quantization", "llama.cpp", "hadamard", "turboquant", "inference"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "torch>=2.0",
+    "transformers>=4.40",
+    "safetensors>=0.4",
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "ruff>=0.5"]
+demo = ["gradio>=4.40", "matplotlib>=3.7"]
+
+[project.scripts]
+turboquant = "turboquant.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/Ary5272/turbocpp"
+Issues = "https://github.com/Ary5272/turbocpp/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["turboquant*"]
+
+[tool.pytest.ini_options]
+testpaths = ["turboquant"]
+addopts = "-q"

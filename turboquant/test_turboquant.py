@@ -157,3 +157,39 @@ def test_norm_fusion_preserves_attn_input_path():
     assert torch.allclose(pre, post, atol=1e-12), \
         f"fuse_norms_into_next changed output: max diff {(pre - post).abs().max()}"
     assert torch.allclose(g2, torch.ones_like(g2)), "γ wasn't reset to 1"
+
+
+def test_bench_rotation_helps_quantization():
+    """The marquee claim — rotation actually reduces Q4 MSE on heavy-tailed
+    weights — has to hold or the whole story is wrong."""
+    from turboquant.bench import heavy_tailed_weight, measure
+    W = heavy_tailed_weight(n_rows=512, n_cols=2048, seed=3)
+    base = measure(W, bits=4, rotated=False)
+    rot  = measure(W, bits=4, rotated=True)
+    # Conservative threshold: rotation must improve MSE by at least 2× on
+    # this synthetic. Real LLaMA weights typically see 3-5×.
+    assert rot.mse < base.mse / 2.0, \
+        f"rotation didn't help enough: base MSE={base.mse:.3e}, rot MSE={rot.mse:.3e}"
+
+
+def test_kv_rotation_preserves_attention_score():
+    """Per-head Hadamard inside attention's head_dim must preserve QK^T:
+        (Q H) (K H)^T = Q H H^T K^T = Q K^T
+    """
+    from turboquant.kvcache import rotate_kv_for_cache_quant
+    m = _build_tiny_model_unit_norms()
+
+    # Synthetic Q, K from a random hidden state.
+    torch.manual_seed(23)
+    h = torch.randn(8, 256, dtype=torch.float64)
+    Wq = m.model.layers[0].self_attn.q_proj.weight.data
+    Wk = m.model.layers[0].self_attn.k_proj.weight.data
+    pre_qk = (h @ Wq.t()) @ (h @ Wk.t()).t()
+
+    rotate_kv_for_cache_quant(m, block_size=128)
+
+    Wq2 = m.model.layers[0].self_attn.q_proj.weight.data
+    Wk2 = m.model.layers[0].self_attn.k_proj.weight.data
+    post_qk = (h @ Wq2.t()) @ (h @ Wk2.t()).t()
+    assert torch.allclose(pre_qk, post_qk, atol=1e-9), \
+        f"KV rotation changed Q·K^T: max diff {(pre_qk - post_qk).abs().max()}"

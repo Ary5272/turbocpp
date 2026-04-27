@@ -34,6 +34,7 @@ from .turboquant import (
     fuse_norms_into_next,
     apply_residual_rotation,
 )
+from .kvcache import rotate_kv_for_cache_quant
 
 __all__ = [
     "hadamard_matrix",
@@ -41,6 +42,7 @@ __all__ = [
     "rotate_llama_model",
     "fuse_norms_into_next",
     "apply_residual_rotation",
+    "rotate_kv_for_cache_quant",
 ]
 
 __version__ = "0.1.0"

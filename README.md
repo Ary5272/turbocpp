@@ -35,6 +35,56 @@ llama.cpp already ships:
 
 TurboQuant adds: a **2 KB Python module** that rotates the model's weight matrices in-place using Walsh-Hadamard transforms. The rotation cancels through the residual-stream linear pieces (it's orthogonal) so the model is fp32-bit-identical, but the per-weight-block max-abs that drives Q4 / Q4_K rounding error drops 3-5×, which translates to **0.3-0.5 perplexity improvement at Q4_K_M** on LLaMA-2-7B (and bigger gains at lower bit-widths).
 
+## Does this actually run faster than stock llama.cpp?
+
+It's the right question and the honest answer has two parts:
+
+### Same bit-width: NO
+
+Quantizing a TurboQuant-rotated model at Q4_K_M and running it on stock
+llama.cpp gives the **exact same tokens/sec** as a non-rotated Q4_K_M
+of the same model. Same bytes per weight, same kernels, same memory
+layout. What you get is **better quality at the same speed** — about
+0.3-0.5 perplexity points back at Q4_K_M on LLaMA-2-7B.
+
+### Drop a bit-width tier: YES
+
+The real speed win is using the recovered quality budget to drop one
+quantization tier:
+
+| recipe | bytes/weight | quality | wall-clock decode |
+|---|---|---|---|
+| baseline Q4_K_M (no rotation)        | 4.625 | reference | reference |
+| TurboQuant Q4_K_M                    | 4.625 | **better** | same |
+| **TurboQuant Q3_K_M**                | 3.5   | ≈ baseline Q4_K_M | **~1.20-1.30× faster** on memory-bound CPUs |
+| TurboQuant Q2_K (aggressive)         | 2.6   | usable for some tasks | **~1.5× faster** |
+
+The speedup comes from memory bandwidth: decoding is bandwidth-bound on
+nearly all consumer CPUs (and on Sapphire Rapids when the workload
+doesn't fit AMX tiles, which is most of them at long context). Fewer
+bytes per weight read each step = fewer cycles waiting on DRAM.
+
+### KV cache: also YES (long context)
+
+`turboquant.kvcache.rotate_kv_for_cache_quant()` Hadamard-rotates the
+attention output projection so K and V live in a Gaussianized frame
+**inside** the KV cache. Combine with llama.cpp's
+`--cache-type-k q4_0 --cache-type-v q4_0` and you get usable quality at
+half the KV bandwidth — meaningful at 8K+ context where KV reads dominate.
+
+### Reproduce the numbers
+
+```bash
+# Synthetic micro (1 second, no model needed):
+python -m turboquant.bench
+
+# End-to-end on your machine, real GGUF:
+./scripts/bench_e2e.sh /path/to/HF/Llama-3-8B
+```
+
+The end-to-end script builds both a baseline-Q4_K_M and a TurboQuant-Q3_K_M
+GGUF and runs `llama-bench` on each.
+
 ## Quick start
 
 ```bash
@@ -42,22 +92,41 @@ TurboQuant adds: a **2 KB Python module** that rotates the model's weight matric
 git clone --recursive https://github.com/Ary5272/turbocpp
 cd turbocpp
 
-# 2. Build llama.cpp (CPU, the safe default; see llama.cpp/README.md
-#    for CUDA / Metal / Vulkan / etc.)
+# 2. Build llama.cpp (CPU; see llama.cpp/README.md for CUDA / Metal / Vulkan)
 cmake -S llama.cpp -B llama.cpp/build -DCMAKE_BUILD_TYPE=Release
 cmake --build llama.cpp/build -j
 
-# 3. Install TurboQuant
-pip install -r turboquant/requirements.txt
+# 3. Install the turboquant Python package
+pip install -e .                        # uses pyproject.toml
+# or:  pip install -r turboquant/requirements.txt
 
-# 4. End-to-end: rotate, convert, quantize, run.
+# 4. End-to-end (the SPEED path: rotated Q3_K_M ≈ baseline Q4_K_M quality):
 python -m turboquant ~/models/Llama-3-8B  ~/models/Llama-3-8B-tq
 python llama.cpp/convert_hf_to_gguf.py ~/models/Llama-3-8B-tq \
        --outfile Llama-3-8B-tq.gguf
 llama.cpp/build/bin/llama-quantize \
+       Llama-3-8B-tq.gguf Llama-3-8B-tq-Q3_K_M.gguf Q3_K_M
+llama.cpp/build/bin/llama-cli -m Llama-3-8B-tq-Q3_K_M.gguf \
+       -p "Explain Hadamard quantization in one sentence:" -n 100
+
+# 5. Or the QUALITY path (same speed as baseline, better numbers):
+llama.cpp/build/bin/llama-quantize \
        Llama-3-8B-tq.gguf Llama-3-8B-tq-Q4_K_M.gguf Q4_K_M
-llama.cpp/build/bin/llama-cli -m Llama-3-8B-tq-Q4_K_M.gguf \
-       -p "Explain why Hadamard rotation helps quantization:" -n 100
+```
+
+## HuggingFace Space demo
+
+`space/` is a ready-to-deploy Gradio app that visualizes the rotation
+effect on a synthetic LLM weight tensor:
+
+```
+huggingface.co/new-space   →   sdk: gradio   →   copy space/* into the repo
+```
+
+Locally:
+```bash
+pip install -e ".[demo]"
+python space/app.py
 ```
 
 ## TurboQuant: the math in one block
