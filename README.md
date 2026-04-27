@@ -114,19 +114,6 @@ llama.cpp/build/bin/llama-quantize \
        Llama-3-8B-tq.gguf Llama-3-8B-tq-Q4_K_M.gguf Q4_K_M
 ```
 
-## HuggingFace Space demo
-
-`space/` is a ready-to-deploy Gradio app that visualizes the rotation
-effect on a synthetic LLM weight tensor:
-
-```
-huggingface.co/new-space   →   sdk: gradio   →   copy space/* into the repo
-```
-
-Locally:
-```bash
-pip install -e ".[demo]"
-python space/app.py
 ```
 
 ## TurboQuant: the math in one block
