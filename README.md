@@ -114,8 +114,6 @@ llama.cpp/build/bin/llama-quantize \
        Llama-3-8B-tq.gguf Llama-3-8B-tq-Q4_K_M.gguf Q4_K_M
 ```
 
-```
-
 ## TurboQuant: the math in one block
 
 For each linear layer `y = W x` in the residual stream, with `H` an
