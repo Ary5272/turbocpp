@@ -1,0 +1,47 @@
+# Convenience orchestration: `docker compose up <service>` instead of
+# remembering long docker run flags. All services share ./models for
+# bind-mounted GGUFs.
+
+services:
+  # llama-cli quick test — defaults to whatever the CMD resolves to.
+  cli:
+    build:
+      context: .
+      target: cpu
+    image: ghcr.io/ary5272/turbocpp:cpu
+    volumes:
+      - ./models:/models
+    profiles: [tools]
+
+  # OpenAI-compatible HTTP API on http://localhost:8080
+  server:
+    build:
+      context: .
+      target: server
+    image: ghcr.io/ary5272/turbocpp:server
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./models:/models
+    command:
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - -m
+      - /models/model.gguf
+      - --ctx-size
+      - "4096"
+    profiles: [server]
+
+  # Python TurboQuant preprocessor — feed it a HF model dir, get a
+  # rotated HF dir back. Stable across runs via the hf_cache volume.
+  turboquant:
+    build:
+      context: .
+      target: turboquant
+    image: ghcr.io/ary5272/turbocpp:turboquant
+    volumes:
+      - ./models:/models
+      - ./hf_cache:/root/.cache/huggingface
+    profiles: [tools]

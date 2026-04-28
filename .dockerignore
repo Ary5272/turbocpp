@@ -1,0 +1,43 @@
+# Version control
+.git
+.gitignore
+.github
+.gitmodules
+.gitattributes
+
+# Build artifacts (re-built inside the image, don't pull stale ones in)
+extras/standalone/build/
+extras/standalone/build-*/
+llama.cpp/build/
+llama.cpp/build-*/
+llama.cpp/.git/
+
+# Models / weights — never bake into images
+*.gguf
+*.safetensors
+*.bin
+*.tcpp
+models/
+hf_cache/
+
+# Python
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/.pytest_cache/
+.venv/
+venv/
+env/
+*.egg-info/
+
+# Editors
+.vscode/
+.idea/
+.vs/
+.DS_Store
+Thumbs.db
+
+# CMake leftovers (shouldn't be committed but be defensive)
+CMakeCache.txt
+CMakeFiles/
+CMakeUserPresets.json

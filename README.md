@@ -114,6 +114,47 @@ llama.cpp/build/bin/llama-quantize \
        Llama-3-8B-tq.gguf Llama-3-8B-tq-Q4_K_M.gguf Q4_K_M
 ```
 
+## Docker
+
+Same accessibility model as `ghcr.io/ggml-org/llama.cpp` — three pre-built
+images on GitHub Container Registry, plus a top-level `docker-compose.yml`.
+
+| image | what's inside | size |
+|---|---|---|
+| `ghcr.io/ary5272/turbocpp:cpu`        | full llama.cpp toolchain (`llama-cli`, `llama-server`, `llama-quantize`, `llama-bench`, `llama-perplexity`, …) | ~150 MB |
+| `ghcr.io/ary5272/turbocpp:server`     | inherits `:cpu`, ENTRYPOINT = `llama-server` on `:8080` | ~150 MB |
+| `ghcr.io/ary5272/turbocpp:turboquant` | inherits `:cpu`, adds CPU-only PyTorch + the turboquant Python package | ~2.0 GB |
+
+```bash
+# 1. Quick inference
+docker run --rm -v $PWD/models:/models ghcr.io/ary5272/turbocpp:cpu \
+    llama-cli -m /models/model.gguf -p "Hello"
+
+# 2. OpenAI-compatible HTTP server
+docker run --rm -p 8080:8080 -v $PWD/models:/models \
+    ghcr.io/ary5272/turbocpp:server -m /models/model.gguf
+
+# 3. End-to-end TurboQuant preprocessing
+docker run --rm -v $PWD/models:/models -v $PWD/hf_cache:/root/.cache/huggingface \
+    ghcr.io/ary5272/turbocpp:turboquant \
+    python -m turboquant /models/Llama-3-8B /models/Llama-3-8B-tq
+
+# Or via docker compose:
+docker compose --profile server up
+docker compose --profile tools run --rm turboquant python -m turboquant ...
+```
+
+Build locally to enable a different CPU baseline (e.g. AVX-512):
+
+```bash
+docker build --target cpu \
+    --build-arg LLAMA_CMAKE_FLAGS="-DGGML_NATIVE=OFF -DGGML_AVX512=ON -DGGML_AVX2=ON -DGGML_FMA=ON -DGGML_F16C=ON" \
+    -t turbocpp:cpu-avx512 .
+```
+
+A new image is pushed to GHCR on every `main` commit and every `v*` tag —
+see [`.github/workflows/docker.yml`](.github/workflows/docker.yml).
+
 ## TurboQuant: the math in one block
 
 For each linear layer `y = W x` in the residual stream, with `H` an
