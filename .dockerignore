@@ -8,9 +8,17 @@
 # Build artifacts (re-built inside the image, don't pull stale ones in)
 extras/standalone/build/
 extras/standalone/build-*/
-llama.cpp/build/
-llama.cpp/build-*/
-llama.cpp/.git/
+# Whole llama.cpp submodule — the Dockerfile installs llama-cpp-python from
+# a prebuilt wheel instead of source-building, so the submodule isn't needed
+# in the build context (and ignoring it shaves gigabytes off `docker build`).
+llama.cpp/
+
+# Standalone C++ extras — also not needed for the python image.
+extras/
+
+# Wheel build outputs and pyproject metadata clutter
+dist/
+build/
 
 # Models / weights — never bake into images
 *.gguf

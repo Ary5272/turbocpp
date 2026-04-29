@@ -1,133 +1,109 @@
 # syntax=docker/dockerfile:1.7
 #
-# turbocpp Docker image. Multi-stage, multi-target — same accessibility
-# story as llama.cpp's `:full`, `:server`, `:light` variants, plus a
-# `:turboquant` target that includes the Python preprocessor.
+# turbocpp Docker image — same workflow accessibility as llama.cpp,
+# but everything is installed from PREBUILT WHEELS hosted at
+# https://huggingface.co/datasets/AIencoder/llama-cpp-wheels.
+#
+# No C++ compile step → image build is ~30 seconds instead of ~10 minutes,
+# and the image works on any x86_64 host with AVX2 + FMA + F16C
+# (effectively every cloud / CI / consumer CPU made after 2013).
 #
 # Targets:
-#   cpu        ── llama-cli, llama-server, llama-quantize, llama-bench, …
-#                 (the standard llama.cpp toolchain). Default CMD: llama-cli.
-#   server     ── inherits cpu; CMD launches llama-server on :8080.
-#   turboquant ── inherits cpu; adds Python turboquant + torch/transformers
-#                 so you can `python -m turboquant <hf_dir> <out_dir>`.
+#   :cpu        full turbocpp toolchain — `turbocpp generate|serve|rotate|bench`,
+#               plus `convert_hf_to_gguf.py` from llama.cpp's Python utils.
+#   :server     inherits cpu; CMD launches the OpenAI-compatible HTTP server
+#               on :8080 (via llama-cpp-python's built-in FastAPI app).
+#   :turboquant inherits cpu; adds torch + transformers so `turbocpp rotate`
+#               actually runs on a HuggingFace model checkpoint.
 #
 # Build:
 #   docker build --target cpu        -t turbocpp:cpu        .
 #   docker build --target server     -t turbocpp:server     .
 #   docker build --target turboquant -t turbocpp:turboquant .
 #
-# Run:
-#   docker run --rm -v $PWD/models:/models turbocpp:cpu \
-#     llama-cli -m /models/model.gguf -p "Hello"
+# Run examples:
+#   # one-shot inference
+#   docker run --rm -v ~/models:/models turbocpp:cpu \
+#          generate -m /models/m.gguf -p "Hello" -n 64
 #
-#   docker run --rm -p 8080:8080 -v $PWD/models:/models turbocpp:server \
-#     -m /models/model.gguf
+#   # OpenAI-compat server
+#   docker run --rm -p 8080:8080 -v ~/models:/models turbocpp:server \
+#          -m /models/m.gguf
 #
-#   docker run --rm -v $PWD/models:/models turbocpp:turboquant \
-#     python -m turboquant /models/Llama-3-8B /models/Llama-3-8B-tq
-#
-# CPU portability: built with -DGGML_NATIVE=OFF and an explicit AVX2/FMA/F16C
-# baseline → runs on any x86_64 from 2013 onward. Override at build time:
-#   docker build --build-arg LLAMA_CMAKE_FLAGS="-DGGML_AVX512=ON" ...
-# ─────────────────────────────────────────────────────────────────────────────
+#   # offline rotation pipeline
+#   docker run --rm -v ~/models:/models turbocpp:turboquant \
+#          rotate /models/Llama-3-8B /models/Llama-3-8B-tq
 
-ARG UBUNTU_VERSION=24.04
+ARG PY=3.12
 
 # ============================================================================
-# Stage: base — minimal runtime deps shared by every final image
+# Stage: base — Python + a couple of small native deps llama-cpp-python needs
 # ============================================================================
-FROM ubuntu:${UBUNTU_VERSION} AS base
-ENV DEBIAN_FRONTEND=noninteractive
+FROM python:${PY}-slim AS base
 
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
         ca-certificates \
-        libcurl4 \
         libgomp1 \
-        python3 \
-        python3-pip \
-    && rm -rf /var/lib/apt/lists/*
+ && rm -rf /var/lib/apt/lists/* \
+ && pip install --upgrade pip
 
 # ============================================================================
-# Stage: builder — compile llama.cpp once, share artifacts across targets
-# ============================================================================
-FROM ubuntu:${UBUNTU_VERSION} AS builder
-ENV DEBIAN_FRONTEND=noninteractive
-
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        build-essential \
-        cmake \
-        git \
-        libcurl4-openssl-dev \
-        pkg-config \
-    && rm -rf /var/lib/apt/lists/*
-
-ARG LLAMA_CMAKE_FLAGS="-DGGML_NATIVE=OFF -DGGML_AVX2=ON -DGGML_FMA=ON -DGGML_F16C=ON"
-
-WORKDIR /src
-COPY llama.cpp /src/llama.cpp
-
-RUN cmake -S /src/llama.cpp -B /src/build \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DLLAMA_CURL=ON \
-        -DLLAMA_BUILD_TESTS=OFF \
-        -DLLAMA_BUILD_EXAMPLES=ON \
-        ${LLAMA_CMAKE_FLAGS} \
-    && cmake --build /src/build --config Release -j"$(nproc)"
-
-# Stage all installable artifacts into /artifacts so the runtime stages
-# can do a single COPY. Some llama.cpp versions emit shared libs; copy
-# them too if present.
-RUN mkdir -p /artifacts/bin /artifacts/lib && \
-    cp /src/build/bin/llama-* /artifacts/bin/ && \
-    find /src/build -maxdepth 4 -name "*.so" -exec cp {} /artifacts/lib/ \; ; \
-    cp /src/llama.cpp/convert_hf_to_gguf.py /artifacts/ ; \
-    cp -r /src/llama.cpp/gguf-py /artifacts/ ; \
-    true
-
-# ============================================================================
-# Target: cpu — the default, full llama.cpp CLI toolchain
+# Stage: cpu — turbocpp + llama-cpp-python via prebuilt wheels
 # ============================================================================
 FROM base AS cpu
 
-COPY --from=builder /artifacts/bin/   /usr/local/bin/
-COPY --from=builder /artifacts/lib/   /usr/local/lib/
-COPY --from=builder /artifacts/convert_hf_to_gguf.py /opt/llama.cpp/convert_hf_to_gguf.py
-COPY --from=builder /artifacts/gguf-py /opt/llama.cpp/gguf-py
+# Pinned wheel URLs. Override with --build-arg if you want a different
+# CPU feature set (avx512, vnni, amx, …) from AIencoder/llama-cpp-wheels.
+ARG LLAMA_CPP_WHEEL_URL=https://huggingface.co/datasets/AIencoder/llama-cpp-wheels/resolve/main/llama_cpp_python-0.3.16%2Bbasic_avx2_fma_f16c-cp312-cp312-manylinux_2_31_x86_64.whl
+ARG TURBOCPP_WHEEL_URL=https://huggingface.co/datasets/AIencoder/llama-cpp-wheels/resolve/main/turbocpp/turbocpp-0.3.0-py3-none-any.whl
 
-ENV LD_LIBRARY_PATH=/usr/local/lib:${LD_LIBRARY_PATH} \
-    PYTHONPATH=/opt/llama.cpp/gguf-py
+RUN pip install \
+        "${LLAMA_CPP_WHEEL_URL}" \
+        "${TURBOCPP_WHEEL_URL}" \
+        "huggingface_hub>=0.24,<1.0" \
+        "gguf>=0.10"
+
+# Sanity check: the unified CLI is reachable.
+RUN turbocpp --help >/dev/null
 
 WORKDIR /work
-CMD ["llama-cli", "--help"]
+ENTRYPOINT ["turbocpp"]
+CMD ["--help"]
 
 # ============================================================================
-# Target: server — OpenAI-compatible HTTP API on :8080
+# Stage: server — OpenAI-compatible HTTP API on :8080
 # ============================================================================
 FROM cpu AS server
 
+# llama-cpp-python's built-in server uses FastAPI + Uvicorn.
+RUN pip install \
+        "uvicorn[standard]>=0.30" \
+        "fastapi>=0.110" \
+        "sse-starlette>=1.8" \
+        "starlette-context>=0.3.6" \
+        "pydantic-settings>=2.0"
+
 EXPOSE 8080
-ENTRYPOINT ["llama-server"]
-CMD ["--host", "0.0.0.0", "--port", "8080"]
+ENTRYPOINT ["turbocpp", "serve", "--host", "0.0.0.0", "--port", "8080"]
+CMD []
 
 # ============================================================================
-# Target: turboquant — adds Python preprocessor (heaviest image)
+# Stage: turboquant — adds the offline rotation pipeline (torch+transformers)
 # ============================================================================
 FROM cpu AS turboquant
 
-# CPU-only torch wheel — drops the image from ~7 GB (CUDA torch) to ~2 GB.
-RUN pip install --break-system-packages --no-cache-dir \
-        --index-url https://download.pytorch.org/whl/cpu \
-        torch \
-    && pip install --break-system-packages --no-cache-dir \
-        transformers safetensors numpy
+# CPU-only torch wheel keeps the image around 2 GB instead of 7 GB.
+RUN pip install --extra-index-url https://download.pytorch.org/whl/cpu \
+        "torch>=2.0" \
+        "transformers>=4.40" \
+        "safetensors>=0.4" \
+        "numpy>=1.24"
 
-WORKDIR /app
-COPY pyproject.toml /app/
-COPY turboquant /app/turboquant
-RUN pip install --break-system-packages --no-cache-dir /app
-
-WORKDIR /work
-ENTRYPOINT []
-CMD ["python", "-m", "turboquant", "--help"]
+ENTRYPOINT ["turbocpp"]
+CMD ["rotate", "--help"]

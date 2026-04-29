@@ -46,3 +46,8 @@ Thumbs.db
 CMakeCache.txt
 CMakeFiles/
 CMakeUserPresets.json
+
+# Wheel build outputs
+dist/
+build/
+*.egg-info/

@@ -3,14 +3,14 @@ requires = ["setuptools>=64", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "turboquant"
-version = "0.2.0"
-description = "Hadamard-rotation preprocessor for LLM weights — pairs with llama.cpp"
-readme = "turboquant/README.md"
+name = "turbocpp"
+version = "0.3.0"
+description = "llama.cpp + TurboQuant — Hadamard-rotation preprocessor for LLM weights, plus a unified CLI on top of llama-cpp-python"
+readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Ary5272" }]
-keywords = ["llm", "quantization", "llama.cpp", "hadamard", "turboquant", "inference"]
+keywords = ["llm", "quantization", "llama.cpp", "hadamard", "turboquant", "inference", "gguf"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -23,23 +23,34 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
+# Core deps. Inference deps are kept optional via [runtime] so a
+# rotation-only install stays small.
 dependencies = [
     "torch>=2.0",
     "transformers>=4.40",
     "safetensors>=0.4",
     "numpy>=1.24",
+    "huggingface_hub>=0.24,<2.0",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0", "ruff>=0.5"]
-demo = ["gradio>=4.40", "matplotlib>=3.7"]
+# Pulls in llama-cpp-python (the actual inference engine). Use:
+#   pip install turbocpp[runtime]
+runtime = ["llama-cpp-python>=0.3.2"]
+dev = ["pytest>=7.0", "ruff>=0.5", "build>=1.0", "twine>=5.0"]
+demo = ["gradio>=4.40,<5.0", "matplotlib>=3.7", "pillow>=10.0"]
 
 [project.scripts]
-turboquant = "turboquant.__main__:main"
+# Unified CLI — `turbocpp <subcommand>` is the canonical name; the
+# `turboquant` alias is preserved for back-compat.
+turbocpp   = "turboquant.cli:main"
+turboquant = "turboquant.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/Ary5272/turbocpp"
 Issues = "https://github.com/Ary5272/turbocpp/issues"
+HuggingFaceSpace = "https://huggingface.co/spaces/AIencoder/turboquant-visualizer"
+WheelMirror = "https://huggingface.co/datasets/AIencoder/llama-cpp-wheels"
 
 [tool.setuptools.packages.find]
 where = ["."]

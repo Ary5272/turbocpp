@@ -4,6 +4,55 @@
 > Hadamard-rotation preprocessor that meaningfully improves the quality
 > of any quantization (Q4_0 / Q4_K_M / Q6_K / …) at zero inference cost.
 
+| | |
+|---|---|
+| 🚀 **Live demo** | [huggingface.co/spaces/AIencoder/turboquant-visualizer](https://huggingface.co/spaces/AIencoder/turboquant-visualizer) |
+| 📦 **Python package** | `pip install https://huggingface.co/datasets/AIencoder/llama-cpp-wheels/resolve/main/turbocpp/turbocpp-0.3.0-py3-none-any.whl` |
+| 🐳 **Docker images** | `docker pull ghcr.io/ary5272/turbocpp:cpu` (also `:server`, `:turboquant`) |
+| 🔧 **Wheel mirror** | [datasets/AIencoder/llama-cpp-wheels](https://huggingface.co/datasets/AIencoder/llama-cpp-wheels) — prebuilt llama-cpp-python for every CPU feature combo |
+
+## Install
+
+```bash
+# Pure Python — rotation tool + CLI, no inference engine.
+pip install https://huggingface.co/datasets/AIencoder/llama-cpp-wheels/resolve/main/turbocpp/turbocpp-0.3.0-py3-none-any.whl
+
+# With the inference runtime (llama-cpp-python prebuilt wheel):
+pip install \
+    https://huggingface.co/datasets/AIencoder/llama-cpp-wheels/resolve/main/turbocpp/turbocpp-0.3.0-py3-none-any.whl \
+    https://huggingface.co/datasets/AIencoder/llama-cpp-wheels/resolve/main/llama_cpp_python-0.3.16%2Bbasic_avx2_fma_f16c-cp312-cp312-manylinux_2_31_x86_64.whl
+```
+
+After install you get a `turbocpp` CLI:
+
+```bash
+turbocpp rotate   ./Llama-3-8B  ./Llama-3-8B-tq    # apply Hadamard rotation
+turbocpp generate -m model.gguf -p "Hello"  -n 64   # one-shot inference
+turbocpp serve    -m model.gguf --host 0.0.0.0 --port 8080
+turbocpp bench                                       # quick rotation/quant MSE check
+```
+
+## Docker
+
+```bash
+# Inference runtime + unified CLI (small image, ~500 MB)
+docker run --rm -v ~/models:/models ghcr.io/ary5272/turbocpp:cpu \
+       generate -m /models/m.gguf -p "Hello" -n 64
+
+# OpenAI-compatible HTTP server on :8080
+docker run --rm -p 8080:8080 -v ~/models:/models ghcr.io/ary5272/turbocpp:server \
+       -m /models/m.gguf
+
+# Adds torch + transformers for the offline rotation step (~2 GB)
+docker run --rm -v ~/models:/models ghcr.io/ary5272/turbocpp:turboquant \
+       rotate /models/Llama-3-8B /models/Llama-3-8B-tq
+```
+
+All three images install llama-cpp-python from a **prebuilt wheel** at
+`AIencoder/llama-cpp-wheels`. No source compile step → image build takes
+~30 seconds instead of ~10 minutes, and the same image runs on any
+x86_64 host with AVX2 + FMA + F16C.
+
 ```
    ┌───────────────────────────────────────────────────────────────┐
    │ HF model ──► turboquant rotate ──► llama.cpp convert+quantize │
