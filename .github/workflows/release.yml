@@ -1,0 +1,81 @@
+name: release
+
+# Build the turbocpp wheel + sdist on every `v*` tag and publish them
+# as GitHub Release assets. After this lands, anyone can install with:
+#
+#   pip install https://github.com/Ary5272/turbocpp/releases/latest/download/turbocpp-py3-none-any.whl
+#
+# (`/releases/latest/download/<asset>` is a permanent redirect that GitHub
+# resolves to whichever release is most recent, so this URL never goes
+# stale.)
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "version tag to publish (e.g. v0.3.0)"
+        required: true
+
+permissions:
+  contents: write   # release create + asset upload
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+
+      - name: Build wheel + sdist
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build
+
+      - name: Add a stable, version-less wheel filename
+        # Side-by-side copy so /releases/latest/download/turbocpp-py3-none-any.whl
+        # always resolves to the current wheel, regardless of version.
+        run: |
+          set -euo pipefail
+          cd dist
+          WHEEL=$(ls turbocpp-*-py3-none-any.whl)
+          cp "$WHEEL" "turbocpp-py3-none-any.whl"
+          ls -la
+
+      - name: Create GitHub Release + upload assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: ${{ github.event.inputs.tag || github.ref_name }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            dist/turbocpp-*.whl
+            dist/turbocpp-*.tar.gz
+            dist/turbocpp-py3-none-any.whl
+
+      - name: Mirror wheel to AIencoder/llama-cpp-wheels (if HF_TOKEN set)
+        if: ${{ env.HF_TOKEN != '' }}
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python -m pip install --quiet 'huggingface_hub<2.0'
+          python - <<'PY'
+          import os, glob
+          from huggingface_hub import HfApi
+          api = HfApi(token=os.environ["HF_TOKEN"])
+          for whl in sorted(glob.glob("dist/turbocpp-*.whl")):
+              if whl.endswith("turbocpp-py3-none-any.whl"):
+                  continue                        # skip the alias copy
+              api.upload_file(
+                  repo_id="AIencoder/llama-cpp-wheels",
+                  repo_type="dataset",
+                  path_or_fileobj=whl,
+                  path_in_repo=f"turbocpp/{os.path.basename(whl)}",
+                  commit_message=f"mirror: {os.path.basename(whl)}",
+              )
+              print("mirrored", whl)
+          PY

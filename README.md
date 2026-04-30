@@ -14,13 +14,16 @@
 ## Install
 
 ```bash
-# Pure Python — rotation tool + CLI, no inference engine.
-pip install https://huggingface.co/datasets/AIencoder/llama-cpp-wheels/resolve/main/turbocpp/turbocpp-0.3.0-py3-none-any.whl
+# From the GitHub Release (always points at the latest tag):
+pip install https://github.com/Ary5272/turbocpp/releases/latest/download/turbocpp-py3-none-any.whl
 
-# With the inference runtime (llama-cpp-python prebuilt wheel):
+# Plus the inference engine (also a prebuilt wheel — never source-builds):
 pip install \
-    https://huggingface.co/datasets/AIencoder/llama-cpp-wheels/resolve/main/turbocpp/turbocpp-0.3.0-py3-none-any.whl \
+    https://github.com/Ary5272/turbocpp/releases/latest/download/turbocpp-py3-none-any.whl \
     https://huggingface.co/datasets/AIencoder/llama-cpp-wheels/resolve/main/llama_cpp_python-0.3.16%2Bbasic_avx2_fma_f16c-cp312-cp312-manylinux_2_31_x86_64.whl
+
+# Or the HF dataset mirror if GitHub is blocked at your endpoint:
+pip install https://huggingface.co/datasets/AIencoder/llama-cpp-wheels/resolve/main/turbocpp/turbocpp-0.3.0-py3-none-any.whl
 ```
 
 After install you get a `turbocpp` CLI:
