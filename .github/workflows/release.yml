@@ -49,7 +49,7 @@ jobs:
         # Cryptographically signed claim that *this workflow on this
         # commit* produced these files. Verifiable with:
         #   gh attestation verify <file> --owner Ary5272
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v3.0.0
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v3.0.0
         with:
           subject-path: |
             dist/turbocpp-*.whl
