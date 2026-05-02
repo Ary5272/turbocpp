@@ -38,7 +38,7 @@ dependencies = [
 #   pip install turbocpp[runtime]
 runtime = ["llama-cpp-python>=0.3.2"]
 dev = ["pytest>=7.0", "ruff>=0.5", "build>=1.0", "twine>=5.0"]
-demo = ["gradio>=4.40,<5.0", "matplotlib>=3.7", "pillow>=10.0"]
+demo = ["gradio>=4.40,<7.0", "matplotlib>=3.7", "pillow>=10.0"]
 
 [project.scripts]
 # Unified CLI — `turbocpp <subcommand>` is the canonical name; the
