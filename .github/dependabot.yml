@@ -1,0 +1,29 @@
+version: 2
+updates:
+  # Pin GitHub Actions to immutable SHAs; Dependabot keeps them current.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci(actions)"
+    labels: [security, dependencies, github-actions]
+
+  # Python deps (pyproject.toml + the Space requirements.txt aren't here
+  # — the Space lives in the HF repo, so only pyproject is tracked).
+  - package-ecosystem: pip
+    directory: /
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps(pip)"
+    labels: [dependencies, python]
+
+  # Dockerfile base images.
+  - package-ecosystem: docker
+    directory: /
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps(docker)"
+    labels: [dependencies, docker]

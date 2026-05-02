@@ -1,0 +1,16 @@
+# gitleaks config — supplements default rules with a `paths` allowlist
+# so test fixtures don't trip on literal-shaped strings. We do NOT
+# allowlist token regexes themselves — the whole point of the scan is
+# to catch real ones, and a regex allowlist would also un-flag a real
+# leak that happened to match the shape.
+title = "turbocpp gitleaks"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "test fixtures only"
+paths = [
+    '''(?i)turboquant/test_.*\.py''',
+    '''(?i)extras/standalone/tests/.*''',
+]

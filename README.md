@@ -36,7 +36,23 @@ turbocpp speculative -m target.gguf -d draft.gguf -p "..." # 1.5-3× faster deco
 turbocpp pick-wheel                                         # auto-pick fastest wheel
 turbocpp pick-wheel  --gpu cuda12                           # GPU variant URL
 turbocpp bench                                              # rotation/quant MSE microbench
+
+# every llama.cpp tool, no submodule, no compile — pulls ggml-org/llama.cpp:full
+turbocpp convert    /models/Llama-3-8B    --outfile /models/m.gguf
+turbocpp quantize   /models/m.gguf  /models/m-Q4_K_M.gguf  Q4_K_M
+turbocpp perplexity -m /models/m-Q4_K_M.gguf -f /data/wiki.test.raw
+turbocpp imatrix    -m /models/m.gguf -f /data/calib.txt -o imatrix.dat
+turbocpp llama-cli  -m /models/m.gguf -p "Hello"
+turbocpp llama-bench -m /models/m.gguf
+turbocpp llama       <any-tool>           # raw passthrough
 ```
+
+### Security
+
+- All `.github/workflows/*.yml` actions are pinned to commit SHAs (Dependabot keeps them current).
+- Wheels and Docker images carry [SLSA build provenance attestations](https://slsa.dev/) — verify with `gh attestation verify <file> --owner Ary5272`.
+- Weekly `gitleaks` + CodeQL scans on `main`.
+- See [`SECURITY.md`](SECURITY.md) for vulnerability reporting.
 
 ### Get actual speedups, not just better quality
 
@@ -95,7 +111,7 @@ x86_64 host with AVX2 + FMA + F16C.
 
 | path | purpose |
 |---|---|
-| [`llama.cpp/`](llama.cpp) | upstream **ggml-org/llama.cpp** as a git submodule — the inference engine, all of its quantization formats, GPU backends (CUDA / Metal / Vulkan / SYCL / ROCm), HTTP server, samplers, grammars, and ~50 model architectures |
+| `ghcr.io/ggml-org/llama.cpp:full` | upstream **ggml-org/llama.cpp**, pulled at runtime via Docker — the inference engine, every quantization format, every GPU backend (CUDA / Metal / Vulkan / SYCL / ROCm), HTTP server, samplers, grammars, ~50 model architectures. We **stopped vendoring** llama.cpp as a git submodule in 0.5.0 so you always get whatever ggml-org's latest stable image is, without us pinning a stale commit. The `turbocpp llama <tool>` and `turbocpp convert / quantize / perplexity / imatrix / llama-cli / llama-bench` subcommands all forward into this image. |
 | [`turboquant/`](turboquant) | the differentiator — Python package that applies Walsh-Hadamard rotation to a HuggingFace model **before** quantization. Output is a standard rotated HF checkpoint that you feed to `convert_hf_to_gguf.py` unmodified |
 | [`extras/standalone/`](extras/standalone) | a parallel from-scratch C++17 implementation written earlier in the project. Pure CPU, AVX2/AVX-512, K-quants, GQA, YaRN, mirostat, beam search, GBNF subset, OpenAI-compat HTTP server. Useful as a study reference and a lighter-weight runtime when you don't need llama.cpp's full footprint |
 

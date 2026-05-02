@@ -18,6 +18,9 @@ import argparse
 import sys
 from pathlib import Path
 
+# argparse is imported above; re-exported under a top-level alias for the
+# REMAINDER constant we reference deeper in the parser definition.
+
 
 # ---------------------------------------------------------------------------
 # rotate (delegates to the existing Python module — no behavior change)
@@ -153,6 +156,39 @@ def _cmd_speculative(args) -> int:
     return 0
 
 
+def _cmd_llama_passthrough(args) -> int:
+    """Forward to a binary in ggml-org's official llama.cpp image."""
+    from .llama_docker import LLAMA_TOOLS, run_tool, DEFAULT_IMAGE
+
+    tool = getattr(args, "_tool", None) or args.tool
+    if tool not in LLAMA_TOOLS:
+        print(f"unknown tool {tool!r}; choose from {LLAMA_TOOLS}", file=sys.stderr)
+        return 2
+
+    mounts = {}
+    for spec in args.mount:
+        if ":" not in spec:
+            print(f"bad --mount {spec!r}; expected host:container", file=sys.stderr)
+            return 2
+        host, ctr = spec.split(":", 1)
+        mounts[host] = ctr
+
+    ports = {}
+    for spec in args.port:
+        if ":" not in spec:
+            print(f"bad --port {spec!r}; expected host:container", file=sys.stderr)
+            return 2
+        h, c = spec.split(":", 1)
+        ports[int(h)] = int(c)
+
+    image = args.image or DEFAULT_IMAGE
+    rest = list(args.rest or [])
+    if rest and rest[0] == "--":
+        rest = rest[1:]
+    return run_tool(tool, rest, image=image, mounts=mounts, ports=ports,
+                    interactive=sys.stdin.isatty())
+
+
 def _cmd_pick_wheel(args) -> int:
     from .cpu_features import (
         best_wheel_url, candidate_urls, detect_variant, gpu_wheel_url,
@@ -264,6 +300,48 @@ def main(argv=None) -> int:
     psp.add_argument("--ctx",               type=int, default=2048)
     psp.add_argument("--threads",           type=int, default=0)
     psp.set_defaults(func=_cmd_speculative)
+
+    # llama-cpp tool passthroughs (delegate to the official llama.cpp image)
+    psp_tools = sub.add_parser(
+        "llama",
+        help="passthrough to a llama.cpp binary inside ggml-org's official "
+             "Docker image (replaces the old git submodule)",
+    )
+    psp_tools.add_argument(
+        "tool",
+        help="binary name: llama-cli | llama-server | llama-quantize | "
+             "llama-perplexity | llama-imatrix | llama-bench | llama-tokenize | "
+             "llama-embedding | llama-export-lora | llama-gguf-split | "
+             "llama-batched-bench | llama-speculative | convert_hf_to_gguf.py",
+    )
+    psp_tools.add_argument(
+        "rest", nargs=argparse.REMAINDER,
+        help="arguments forwarded to the tool (use -- to separate flags)",
+    )
+    psp_tools.add_argument("--image",  default=None,
+                           help="override image tag (default: ggml-org/llama.cpp:full; "
+                                "use :full-cuda for GPU)")
+    psp_tools.add_argument("--mount", action="append", default=[],
+                           help="host:container bind mount, repeatable")
+    psp_tools.add_argument("--port",  action="append", default=[],
+                           help="host:container port forward, repeatable")
+    psp_tools.set_defaults(func=_cmd_llama_passthrough)
+
+    # convenience aliases for the most-used tools
+    for alias, tool, h in (
+        ("convert",    "convert_hf_to_gguf.py", "HF model → GGUF (delegates to llama.cpp image)"),
+        ("quantize",   "llama-quantize",       "GGUF → quantized GGUF"),
+        ("perplexity", "llama-perplexity",     "compute perplexity on a corpus"),
+        ("imatrix",    "llama-imatrix",        "build an importance matrix for K-quants"),
+        ("llama-cli",  "llama-cli",            "raw llama-cli passthrough"),
+        ("llama-bench", "llama-bench",         "official llama.cpp microbench"),
+    ):
+        ap = sub.add_parser(alias, help=h)
+        ap.add_argument("rest", nargs=argparse.REMAINDER)
+        ap.add_argument("--image", default=None)
+        ap.add_argument("--mount", action="append", default=[])
+        ap.add_argument("--port",  action="append", default=[])
+        ap.set_defaults(func=_cmd_llama_passthrough, _tool=tool)
 
     # pick-wheel
     pw = sub.add_parser(
