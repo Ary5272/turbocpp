@@ -19,12 +19,12 @@ jobs:
     name: gitleaks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0          # full history so we scan the past too
           persist-credentials: false
 
-      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc3b118caad8aaa362ee59b9180 # v2.3.6
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "true"
@@ -39,11 +39,11 @@ jobs:
       matrix:
         language: [python, cpp]
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
 
-      - uses: github/codeql-action/init@4e828ff8d448a8a6e532957b1811f387a63867e8 # v3.31.5
+      - uses: github/codeql-action/init@e46ed2cbd01164d986452f91f178727624ae40d7 # v4.35.3
         with:
           languages: ${{ matrix.language }}
           # The standalone C++ engine in extras/standalone has its own
@@ -57,6 +57,6 @@ jobs:
                 -DCMAKE_BUILD_TYPE=Release
           cmake --build extras/standalone/build -j
 
-      - uses: github/codeql-action/analyze@4e828ff8d448a8a6e532957b1811f387a63867e8 # v3.31.5
+      - uses: github/codeql-action/analyze@e46ed2cbd01164d986452f91f178727624ae40d7 # v4.35.3
         with:
           category: /language:${{ matrix.language }}

@@ -29,13 +29,13 @@ jobs:
         target: [cpu, server, turboquant]
 
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
 
-      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
 
-      - uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
+      - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -45,7 +45,7 @@ jobs:
         run: echo "owner=$(echo ${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
 
       - id: meta
-        uses: docker/metadata-action@418e4b98bf2841bd337d0b24fe63cb36dc8afa55 # v5.8.0
+        uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf # v6.0.0
         with:
           images: ghcr.io/${{ steps.lc.outputs.owner }}/turbocpp
           flavor: |
@@ -56,7 +56,7 @@ jobs:
             type=sha,prefix=sha-,format=short
 
       - id: build
-        uses: docker/build-push-action@4f7cdeb4f2ec7e7fcedfc91dd8627fe79d20b9f4 # v6.18.0
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
           context: .
           target:  ${{ matrix.target }}
@@ -72,7 +72,7 @@ jobs:
       # Verify with:
       #   gh attestation verify oci://ghcr.io/ary5272/turbocpp:cpu --owner Ary5272
       - name: Attest provenance
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v3.0.0
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-name:   ghcr.io/${{ steps.lc.outputs.owner }}/turbocpp
           subject-digest: ${{ steps.build.outputs.digest }}
