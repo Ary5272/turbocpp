@@ -57,15 +57,29 @@ jobs:
             dist/turbocpp-*.tar.gz
             dist/turbocpp-py3-none-any.whl
 
+      # Surface the secret as an env var so the next step's `if:` can
+      # see it without using `secrets.*` directly (GitHub Actions
+      # rejects `secrets.*` inside step-level `if:` at parse time).
+      - name: Detect PyPI token
+        id: pypi
+        env:
+          T: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          if [ -n "$T" ]; then
+            echo "have_token=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "have_token=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Stash alias wheel for the upload steps
-        # /releases/latest/download/turbocpp-py3-none-any.whl needs the
-        # alias filename, but PyPI requires PEP-427-compliant names. Move
-        # it out of dist/ before the PyPI upload, then back afterwards
-        # for the HF mirror step (which uploads everything in dist/).
+        # /releases/latest/download/turbocpp-py3-none-any.whl is the alias
+        # filename; PyPI rejects non-PEP-427 names so move it out before
+        # the PyPI upload, then back afterwards for the HF mirror.
+        if: steps.pypi.outputs.have_token == 'true'
         run: mv dist/turbocpp-py3-none-any.whl /tmp/turbocpp-py3-none-any.whl
 
       - name: Publish to PyPI
-        if: ${{ secrets.PYPI_API_TOKEN != '' }}
+        if: steps.pypi.outputs.have_token == 'true'
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
@@ -73,6 +87,7 @@ jobs:
           packages-dir: dist/
 
       - name: Restore alias wheel for the HF mirror step
+        if: steps.pypi.outputs.have_token == 'true'
         run: mv /tmp/turbocpp-py3-none-any.whl dist/turbocpp-py3-none-any.whl
 
       - name: Mirror wheel to AIencoder/llama-cpp-wheels (if HF_TOKEN set)
