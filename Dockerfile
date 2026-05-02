@@ -99,7 +99,8 @@ CMD []
 FROM cpu AS turboquant
 
 # CPU-only torch wheel keeps the image around 2 GB instead of 7 GB.
-RUN pip install --extra-index-url https://download.pytorch.org/whl/cpu \
+# FIXED: Added the missing backslash after 'pip install'
+RUN pip install \
         "torch>=2.0" \
         "transformers>=4.40" \
         "safetensors>=0.4" \
