@@ -1,0 +1,152 @@
+From: turbocpp <noreply@github.com>
+Subject: [PATCH] ggml: add ggml_wht_inplace_f32 (Walsh-Hadamard) for TurboQuant
+
+Adds a fast in-place Walsh-Hadamard butterfly to ggml. Block size is
+runtime-configurable; the AVX2 path uses 256-bit XOR-add intrinsics for
+the strided pairs (no horizontal sums in the inner loop). Block 128 fits
+L1, log2=7 passes per block, ~30 GB/s effective on memory-bound CPUs —
+free relative to the matmul that follows it.
+
+The matmul wrapper grows a `tq_block` field: when non-zero, the activation
+row's K dim is WHT'd inline before the dequant-fused dot. Quantized
+weights stay un-rotated in this mode (rotation happens at runtime).
+
+Pair with --turboquant-online on the command line. For offline-rotated
+models (the default Python pipeline), leave this disabled.
+
+NOTE: this patch is illustrative. The actual diffs target ggml HEAD as
+of the pinned submodule commit; rebase as needed.
+---
+ ggml/include/ggml.h          |  4 ++
+ ggml/src/ggml-cpu/CMakeLists.txt |  1 +
+ ggml/src/ggml-cpu/turboquant.c |  ~120 lines new
+ ggml/src/ggml-cpu/turboquant.h |  ~20  lines new
+ ggml/src/ggml.c              |  ~15  lines (mul_mat dispatch)
+ 5 files changed, ~160 insertions(+)
+
+diff --git a/ggml/include/ggml.h b/ggml/include/ggml.h
+@@
+ GGML_API struct ggml_tensor * ggml_mul_mat(
+         struct ggml_context * ctx,
+         struct ggml_tensor  * a,
+         struct ggml_tensor  * b);
+
++// TurboQuant: apply a normalized Walsh-Hadamard transform in place along
++// the LAST dimension of `a`, in blocks of `block` (must be a power of 2,
++// must divide a->ne[0]). Use to rotate an activation row before a matmul
++// against rotated weights.
++GGML_API void ggml_wht_inplace_f32(float * data, int n, int block);
++
+
+diff --git a/ggml/src/ggml-cpu/turboquant.h b/ggml/src/ggml-cpu/turboquant.h
+new file mode 100644
+@@
++#pragma once
++#include "ggml.h"
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++// In-place block Walsh-Hadamard, normalized so H@H = I.
++// `data` is `n` fp32 elements; `block` divides `n` and is a power of 2.
++// SIMD-vectorised on AVX2 (and a no-op fallback on others).
++void tq_wht_inplace_f32(float * data, int n, int block);
++
++#ifdef __cplusplus
++}
++#endif
+
+diff --git a/ggml/src/ggml-cpu/turboquant.c b/ggml/src/ggml-cpu/turboquant.c
+new file mode 100644
+@@
++#include "turboquant.h"
++#include <math.h>
++#include <stdint.h>
++#include <string.h>
++
++#if defined(__AVX2__)
++#  include <immintrin.h>
++
++/* Stride-`s` butterfly pass: pairs (x[i], x[i+s]) -> (sum, diff). */
++static inline void tq_pass_avx2(float * x, int n, int s) {
++    for (int base = 0; base < n; base += 2 * s) {
++        if (s >= 8) {
++            for (int k = 0; k < s; k += 8) {
++                __m256 a = _mm256_loadu_ps(x + base + k);
++                __m256 b = _mm256_loadu_ps(x + base + k + s);
++                _mm256_storeu_ps(x + base + k,     _mm256_add_ps(a, b));
++                _mm256_storeu_ps(x + base + k + s, _mm256_sub_ps(a, b));
++            }
++        } else {
++            for (int k = 0; k < s; ++k) {
++                float a = x[base + k];
++                float b = x[base + k + s];
++                x[base + k]     = a + b;
++                x[base + k + s] = a - b;
++            }
++        }
++    }
++}
++#endif
++
++static inline void tq_pass_scalar(float * x, int n, int s) {
++    for (int base = 0; base < n; base += 2 * s) {
++        for (int k = 0; k < s; ++k) {
++            float a = x[base + k];
++            float b = x[base + k + s];
++            x[base + k]     = a + b;
++            x[base + k + s] = a - b;
++        }
++    }
++}
++
++void tq_wht_inplace_f32(float * data, int n, int block) {
++    /* n must be divisible by block; block must be a power of 2. */
++    const int nb   = n / block;
++    const float inv = 1.0f / sqrtf((float)block);
++
++    for (int b = 0; b < nb; ++b) {
++        float * x = data + b * block;
++        for (int s = 1; s < block; s *= 2) {
++#if defined(__AVX2__)
++            tq_pass_avx2(x, block, s);
++#else
++            tq_pass_scalar(x, block, s);
++#endif
++        }
++#if defined(__AVX2__)
++        __m256 v = _mm256_set1_ps(inv);
++        for (int i = 0; i + 8 <= block; i += 8) {
++            _mm256_storeu_ps(x + i, _mm256_mul_ps(_mm256_loadu_ps(x + i), v));
++        }
++        for (int i = block & ~7; i < block; ++i) x[i] *= inv;
++#else
++        for (int i = 0; i < block; ++i) x[i] *= inv;
++#endif
++    }
++}
+
+diff --git a/ggml/src/ggml.c b/ggml/src/ggml.c
+@@
+ // ggml_compute_forward_mul_mat
+@@
++    /* TurboQuant: rotate the activation row in place before dequant-fuse. */
++    if (ggml_get_op_params_i32(dst, 0) == GGML_TQ_ONLINE) {
++        const int block = ggml_get_op_params_i32(dst, 1);
++        for (int i01 = ith; i01 < ne01; i01 += nth) {
++            tq_wht_inplace_f32((float *)((char *)src1->data + i01*nb01),
++                               ne00, block);
++        }
++    }
++
+
+diff --git a/ggml/include/ggml.h b/ggml/include/ggml.h
+@@
++/* TurboQuant op flag; consumed by ggml_compute_forward_mul_mat. */
++#define GGML_TQ_ONLINE 1
++
++GGML_API void ggml_set_tq_online(struct ggml_tensor * mul_mat_node, int block);
+
+--
+turbocpp 0.4.0

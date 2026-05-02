@@ -113,6 +113,63 @@ def _cmd_generate(args) -> int:
     return 0
 
 
+def _cmd_speculative(args) -> int:
+    err = _import_llama_cpp()
+    if err:
+        print(err, file=sys.stderr)
+        return 2
+    from llama_cpp import Llama
+    from .speculative import speculative_generate
+
+    common = dict(n_ctx=args.ctx, n_threads=args.threads or None,
+                  verbose=False, logits_all=True)
+    target = Llama(model_path=args.model, **common)
+    draft  = Llama(model_path=args.draft,  **common)
+
+    # Tokenize once via the target's tokenizer (must match draft's by family).
+    prompt_ids = target.tokenize(args.prompt.encode("utf-8"), add_bos=True)
+    eos = target.token_eos()
+
+    def emit(_id, piece):
+        sys.stdout.write(piece); sys.stdout.flush()
+
+    out, stats = speculative_generate(
+        target=target, draft=draft,
+        prompt_tokens=list(prompt_ids),
+        max_new_tokens=args.n_predict,
+        draft_lookahead=args.lookahead,
+        eos_token=eos,
+        on_token=emit,
+    )
+    print()
+    print(
+        f"\n[{len(out)} tok in {stats.decode_seconds:.2f}s "
+        f"= {len(out)/max(stats.decode_seconds,1e-3):.1f} tok/s | "
+        f"accept {stats.accept_rate*100:.0f}% "
+        f"({stats.accepted}/{stats.proposed}) | "
+        f"speedup vs single-target ≈ {stats.speedup_factor:.2f}×]",
+        file=sys.stderr,
+    )
+    return 0
+
+
+def _cmd_pick_wheel(args) -> int:
+    from .cpu_features import (
+        best_wheel_url, candidate_urls, detect_variant, gpu_wheel_url,
+    )
+    if args.gpu:
+        print(f"# gpu backend: {args.gpu}")
+        print(gpu_wheel_url(args.gpu))
+        return 0
+    if args.all:
+        for u in candidate_urls():
+            print(u)
+    else:
+        print(f"# variant: {detect_variant()}")
+        print(best_wheel_url())
+    return 0
+
+
 def _cmd_serve(args) -> int:
     err = _import_llama_cpp()
     if err:
@@ -190,6 +247,35 @@ def main(argv=None) -> int:
     ps.add_argument("--ctx",           type=int, default=4096)
     ps.add_argument("--threads",       type=int, default=0)
     ps.set_defaults(func=_cmd_serve)
+
+    # speculative
+    psp = sub.add_parser(
+        "speculative",
+        help="speculative decoding: small draft + big target (1.5-3x faster)"
+    )
+    psp.add_argument("-m", "--model",       required=True,
+                     help="target GGUF (the real model)")
+    psp.add_argument("-d", "--draft",       required=True,
+                     help="draft GGUF (smaller/faster, same family)")
+    psp.add_argument("-p", "--prompt",      required=True)
+    psp.add_argument("-n", "--n-predict",   type=int, default=128)
+    psp.add_argument("-k", "--lookahead",   type=int, default=4,
+                     help="number of draft tokens proposed per round")
+    psp.add_argument("--ctx",               type=int, default=2048)
+    psp.add_argument("--threads",           type=int, default=0)
+    psp.set_defaults(func=_cmd_speculative)
+
+    # pick-wheel
+    pw = sub.add_parser(
+        "pick-wheel",
+        help="print best prebuilt llama-cpp-python wheel URL for this host",
+    )
+    pw.add_argument("--all", action="store_true",
+                    help="print full fallback ladder, not just the top pick")
+    pw.add_argument("--gpu", choices=("cuda12", "cuda11", "vulkan",
+                                      "rocm", "sycl", "opencl"),
+                    help="force a GPU-accelerated variant instead of CPU")
+    pw.set_defaults(func=_cmd_pick_wheel)
 
     args = p.parse_args(argv)
     return args.func(args)

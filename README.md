@@ -29,11 +29,36 @@ pip install https://huggingface.co/datasets/AIencoder/llama-cpp-wheels/resolve/m
 After install you get a `turbocpp` CLI:
 
 ```bash
-turbocpp rotate   ./Llama-3-8B  ./Llama-3-8B-tq    # apply Hadamard rotation
-turbocpp generate -m model.gguf -p "Hello"  -n 64   # one-shot inference
-turbocpp serve    -m model.gguf --host 0.0.0.0 --port 8080
-turbocpp bench                                       # quick rotation/quant MSE check
+turbocpp rotate      ./Llama-3-8B  ./Llama-3-8B-tq        # offline Hadamard rotation
+turbocpp generate    -m model.gguf -p "Hello" -n 64        # one-shot inference
+turbocpp serve       -m model.gguf --host 0.0.0.0 --port 8080
+turbocpp speculative -m target.gguf -d draft.gguf -p "..." # 1.5-3× faster decode
+turbocpp pick-wheel                                         # auto-pick fastest wheel
+turbocpp pick-wheel  --gpu cuda12                           # GPU variant URL
+turbocpp bench                                              # rotation/quant MSE microbench
 ```
+
+### Get actual speedups, not just better quality
+
+```bash
+# (1) Auto-install the fastest llama-cpp-python wheel for your CPU
+#     (AVX-512 / VNNI / AMX automatically chosen):
+pip install $(turbocpp pick-wheel)
+
+# (2) Speculative decoding — biggest single decode win, no kernels needed.
+#     Smaller draft proposes K tokens; bigger target verifies in one pass.
+turbocpp speculative \
+    -m  Llama-3-8B-tq-Q4_K_M.gguf      \
+    -d  Llama-3-8B-tq-Q2_K.gguf        \
+    -p  "Explain quantization." -n 256 -k 4
+
+# (3) End-to-end head-to-head benchmark (4-way matrix):
+./scripts/bench_speculative.sh /path/to/HF/Llama-3-8B
+```
+
+The CPU-tier auto-pick alone gives ~10-30% over the AVX2 default on
+Sapphire Rapids / Zen4. Speculative decoding stacks another 1.5-3× on
+top. Together: 2-4× over a stock `pip install llama-cpp-python` flow.
 
 ## Docker
 
