@@ -98,7 +98,7 @@ CMD []
 # ============================================================================
 FROM cpu AS turboquant
 
-# CPU-only torch wheel keeps the image around 2 GB instead of 7 GB.
+# Torch Wheel made full for full compatibility
 # FIXED: Added the missing backslash after 'pip install'
 RUN pip install \
         "torch>=2.0" \
