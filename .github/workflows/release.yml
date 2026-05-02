@@ -91,7 +91,7 @@ jobs:
 
       - name: Publish to PyPI
         if: steps.pypi.outputs.have_token == 'true'
-        uses: pypa/gh-action-pypi-publish@76f52bc884231f62b9a034ebfe128415bbaabdfc # release/v1.13.0
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1.13.0
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
           skip-existing: true
