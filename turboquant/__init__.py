@@ -45,4 +45,14 @@ __all__ = [
     "rotate_kv_for_cache_quant",
 ]
 
-__version__ = "0.1.0"
+# Single source of truth: pyproject.toml's [project].version. Read at
+# import time via importlib.metadata so the in-package value can never
+# drift from what was actually published.
+try:
+    from importlib.metadata import PackageNotFoundError, version as _pkg_version
+    try:
+        __version__ = _pkg_version("turbocpp")
+    except PackageNotFoundError:                       # editable / source tree
+        __version__ = "0.0.0+source"
+except ImportError:                                    # py <3.8 (unsupported)
+    __version__ = "0.0.0+legacy"

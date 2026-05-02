@@ -57,6 +57,24 @@ jobs:
             dist/turbocpp-*.tar.gz
             dist/turbocpp-py3-none-any.whl
 
+      - name: Stash alias wheel for the upload steps
+        # /releases/latest/download/turbocpp-py3-none-any.whl needs the
+        # alias filename, but PyPI requires PEP-427-compliant names. Move
+        # it out of dist/ before the PyPI upload, then back afterwards
+        # for the HF mirror step (which uploads everything in dist/).
+        run: mv dist/turbocpp-py3-none-any.whl /tmp/turbocpp-py3-none-any.whl
+
+      - name: Publish to PyPI
+        if: ${{ secrets.PYPI_API_TOKEN != '' }}
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          skip-existing: true       # safe re-run on the same tag
+          packages-dir: dist/
+
+      - name: Restore alias wheel for the HF mirror step
+        run: mv /tmp/turbocpp-py3-none-any.whl dist/turbocpp-py3-none-any.whl
+
       - name: Mirror wheel to AIencoder/llama-cpp-wheels (if HF_TOKEN set)
         if: ${{ env.HF_TOKEN != '' }}
         env:
