@@ -26,11 +26,11 @@ Ladder (from least to most aggressive):
     basic_avx512_fma_f16c_vnni_vbmi
     basic_avx512_fma_f16c_vnni_vbmi_bf16_amx → Sapphire Rapids
 """
+
 from __future__ import annotations
 
 import platform
 import sys
-from typing import List
 
 LLAMA_CPP_VERSION = "0.3.16"
 WHEEL_BASE = (
@@ -59,6 +59,7 @@ def _cpu_flags() -> set[str]:
     if not flags:
         try:
             import cpuinfo  # type: ignore
+
             info = cpuinfo.get_cpu_info()
             for f_ in info.get("flags", []):
                 flags.add(f_.lower())
@@ -75,11 +76,17 @@ def detect_variant() -> str:
     has = flags.__contains__
 
     # Walk the ladder top-down — pick the topmost match.
-    if has("amx_tile") and has("avx512_bf16") and has("avx512_vbmi") and \
-       has("avx512_vnni") and has("avx512f") and has("fma") and has("f16c"):
+    if (
+        has("amx_tile")
+        and has("avx512_bf16")
+        and has("avx512_vbmi")
+        and has("avx512_vnni")
+        and has("avx512f")
+        and has("fma")
+        and has("f16c")
+    ):
         return "basic_avx512_fma_f16c_vnni_vbmi_bf16_amx"
-    if has("avx512_vbmi") and has("avx512_vnni") and has("avx512f") and \
-       has("fma") and has("f16c"):
+    if has("avx512_vbmi") and has("avx512_vnni") and has("avx512f") and has("fma") and has("f16c"):
         return "basic_avx512_fma_f16c_vnni_vbmi"
     if has("avx512_vnni") and has("avx512f") and has("fma") and has("f16c"):
         return "basic_avx512_fma_f16c_vnni"
@@ -93,7 +100,7 @@ def detect_variant() -> str:
         return "basic_avx2"
     if has("avx"):
         return "basic_avx"
-    return "basic_avx2_fma_f16c"          # safe default for unknown
+    return "basic_avx2_fma_f16c"  # safe default for unknown
 
 
 def _platform_tag() -> str:
@@ -101,16 +108,15 @@ def _platform_tag() -> str:
     if sys.platform.startswith("linux"):
         return "manylinux_2_31_x86_64"
     if sys.platform == "darwin":
-        return "macosx_11_0_arm64" if platform.machine() == "arm64" \
-                                    else "macosx_10_9_x86_64"
+        return "macosx_11_0_arm64" if platform.machine() == "arm64" else "macosx_10_9_x86_64"
     if sys.platform == "win32":
         return "win_amd64"
     return "manylinux_2_31_x86_64"
 
 
-def best_wheel_url(variant: str | None = None,
-                    py_version: str | None = None,
-                    version: str = LLAMA_CPP_VERSION) -> str:
+def best_wheel_url(
+    variant: str | None = None, py_version: str | None = None, version: str = LLAMA_CPP_VERSION
+) -> str:
     """Compose a URL to the prebuilt llama-cpp-python wheel that matches
     the host's CPU + Python version. Override `variant` to force a tag.
     """
@@ -129,15 +135,15 @@ def best_wheel_url(variant: str | None = None,
 GPU_VARIANTS = ("cuda12", "cuda11", "vulkan", "rocm", "sycl", "opencl")
 
 
-def gpu_wheel_url(backend: str, version: str = LLAMA_CPP_VERSION,
-                  py_version: str | None = None) -> str:
+def gpu_wheel_url(
+    backend: str, version: str = LLAMA_CPP_VERSION, py_version: str | None = None
+) -> str:
     """URL for a GPU-accelerated llama-cpp-python wheel from
     AIencoder/TurboCpp_Wheels. backend ∈ {cuda12, cuda11, vulkan, rocm,
     sycl, opencl}. The dataset hosts these for cp310/cp311/cp312 on
     manylinux + win_amd64; not all combos exist for every version."""
     if backend not in GPU_VARIANTS:
-        raise ValueError(f"unknown GPU backend {backend!r}; "
-                         f"choose from {GPU_VARIANTS}")
+        raise ValueError(f"unknown GPU backend {backend!r}; choose from {GPU_VARIANTS}")
     if py_version is None:
         py_version = f"{sys.version_info.major}{sys.version_info.minor}"
     return WHEEL_BASE.format(
@@ -148,7 +154,7 @@ def gpu_wheel_url(backend: str, version: str = LLAMA_CPP_VERSION,
     )
 
 
-def candidate_urls() -> List[str]:
+def candidate_urls() -> list[str]:
     """Return the full ladder, top-supported variant first, then weaker
     fall-backs. Useful for `pip install --index-url …` style retry logic.
     """
@@ -165,7 +171,7 @@ def candidate_urls() -> List[str]:
     ]
     # Slice from the chosen variant downward.
     if chosen in ladder:
-        ladder = ladder[ladder.index(chosen):]
+        ladder = ladder[ladder.index(chosen) :]
     return [best_wheel_url(v) for v in ladder]
 
 

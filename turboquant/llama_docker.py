@@ -22,6 +22,7 @@ Tag selection follows ggml-org's own scheme:
 
 We default to `full` for parity with the historical submodule build.
 """
+
 from __future__ import annotations
 
 import os
@@ -29,8 +30,7 @@ import shlex
 import shutil
 import subprocess
 import sys
-from pathlib import Path
-from typing import Iterable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 
 DEFAULT_IMAGE = "ghcr.io/ggml-org/llama.cpp:full"
 
@@ -63,7 +63,8 @@ def image_present(image: str) -> bool:
         return False
     r = subprocess.run(
         ["docker", "image", "inspect", image],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     return r.returncode == 0
 
@@ -71,9 +72,7 @@ def image_present(image: str) -> bool:
 def pull_image(image: str = DEFAULT_IMAGE, *, quiet: bool = False) -> int:
     """Run `docker pull <image>`. Returns docker's exit code."""
     if not docker_available():
-        raise RuntimeError(
-            "docker not found on PATH — install Docker Desktop or the docker CLI"
-        )
+        raise RuntimeError("docker not found on PATH — install Docker Desktop or the docker CLI")
     cmd = ["docker", "pull", image]
     return subprocess.call(cmd, stdout=subprocess.DEVNULL if quiet else None)
 

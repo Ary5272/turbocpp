@@ -20,23 +20,25 @@ To copy everything (warning: ~30 GB):
 This script is idempotent — uploads are skipped when the destination
 already has the same blob hash.
 """
+
 from __future__ import annotations
 
 import argparse
 import os
 import sys
 import tempfile
-from pathlib import Path
 
 
 def main(argv=None) -> int:
     p = argparse.ArgumentParser()
-    p.add_argument("--src", default="AIencoder/llama-cpp-wheels",
-                   help="source dataset id")
-    p.add_argument("--dst", default="AIencoder/TurboCpp_Wheels",
-                   help="destination dataset id")
-    p.add_argument("--filter", action="append", default=[],
-                   help="glob to copy (repeatable). default: cp312 Linux wheels")
+    p.add_argument("--src", default="AIencoder/llama-cpp-wheels", help="source dataset id")
+    p.add_argument("--dst", default="AIencoder/TurboCpp_Wheels", help="destination dataset id")
+    p.add_argument(
+        "--filter",
+        action="append",
+        default=[],
+        help="glob to copy (repeatable). default: cp312 Linux wheels",
+    )
     p.add_argument("--dry-run", action="store_true")
     args = p.parse_args(argv)
 
@@ -59,8 +61,8 @@ def main(argv=None) -> int:
     print(f"discovering files matching {args.filter} on {args.src} ...")
     src_files = api.list_repo_files(args.src, repo_type="dataset")
     import fnmatch
-    matched = [f for f in src_files
-               if any(fnmatch.fnmatch(f, pat) for pat in args.filter)]
+
+    matched = [f for f in src_files if any(fnmatch.fnmatch(f, pat) for pat in args.filter)]
     print(f"matched {len(matched)} files; will mirror to {args.dst}")
     if args.dry_run:
         for f in matched[:50]:
@@ -74,12 +76,16 @@ def main(argv=None) -> int:
 
     with tempfile.TemporaryDirectory() as td:
         local = snapshot_download(
-            repo_id=args.src, repo_type="dataset",
-            allow_patterns=args.filter, local_dir=td, token=tok,
+            repo_id=args.src,
+            repo_type="dataset",
+            allow_patterns=args.filter,
+            local_dir=td,
+            token=tok,
         )
         print(f"downloaded into {local}, uploading ...")
         api.upload_folder(
-            repo_id=args.dst, repo_type="dataset",
+            repo_id=args.dst,
+            repo_type="dataset",
             folder_path=local,
             allow_patterns=args.filter,
             commit_message=f"mirror {len(matched)} wheels from {args.src}",

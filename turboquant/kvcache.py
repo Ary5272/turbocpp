@@ -33,6 +33,7 @@ output is just V·H. Combine with W_o post-mul Hᵀ to absorb the H. Net:
 no runtime change required, KV cache stores rotated K/V, quantization
 of the rotated cache loses less precision.
 """
+
 from __future__ import annotations
 
 import torch

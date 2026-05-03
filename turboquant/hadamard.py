@@ -5,6 +5,7 @@ We use:
   - block_hadamard_inplace()      to apply n×n WHT to fixed-size blocks of
                                   a longer vector / row of a matrix
 """
+
 from __future__ import annotations
 
 import math
@@ -41,11 +42,11 @@ def block_hadamard_inplace(W: torch.Tensor, axis: int = -1, block: int = 128) ->
         raise ValueError(f"axis dim {n} not divisible by block {block}")
     H = hadamard_matrix(block, dtype=W.dtype).to(W.device)
     # Reshape axis -> (n//block, block), apply H on the last dim, reshape back.
-    moved = W.transpose(axis, -1)            # bring axis to last
+    moved = W.transpose(axis, -1)  # bring axis to last
     shape = moved.shape
     g = shape[-1] // block
     moved = moved.reshape(*shape[:-1], g, block)
-    moved = moved @ H                        # last-axis matmul; H is symmetric
+    moved = moved @ H  # last-axis matmul; H is symmetric
     moved = moved.reshape(*shape)
     out = moved.transpose(axis, -1)
     W.copy_(out)

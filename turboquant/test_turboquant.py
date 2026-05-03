@@ -1,4 +1,5 @@
 """Self-checks. Run with: pytest turboquant/test_turboquant.py"""
+
 import math
 
 import pytest
@@ -39,7 +40,8 @@ def test_block_hadamard_dot_product_preserved():
     w = torch.randn(n, dtype=torch.float64)
     pre = torch.dot(x, w)
 
-    xx = x.clone(); ww = w.clone()
+    xx = x.clone()
+    ww = w.clone()
     # block-Hadamard is a 1D op; route it through a 2D path
     block_hadamard_inplace(xx.view(1, n), axis=-1, block=128)
     block_hadamard_inplace(ww.view(1, n), axis=-1, block=128)
@@ -53,8 +55,8 @@ def test_block_hadamard_reduces_max_abs():
     n = 256
     # Heavy-tailed: occasional outliers + small bulk.
     w = 0.1 * torch.randn(n)
-    w[3] = 5.0      # tail
-    w[120] = 4.5    # tail
+    w[3] = 5.0  # tail
+    w[120] = 4.5  # tail
 
     pre_max = w.abs().reshape(-1, 32).max(dim=1).values
 
@@ -70,6 +72,7 @@ def test_block_hadamard_reduces_max_abs():
 def _build_tiny_model_unit_norms():
     """Tiny LLaMA-shaped model with γ=1 everywhere — used for the
     pure-rotation invariance test where fuse_norms is a no-op."""
+
     class TinyAttn(torch.nn.Module):
         def __init__(self, d, dk):
             super().__init__()
@@ -82,7 +85,7 @@ def _build_tiny_model_unit_norms():
         def __init__(self, d, df):
             super().__init__()
             self.gate_proj = torch.nn.Linear(d, df, bias=False)
-            self.up_proj   = torch.nn.Linear(d, df, bias=False)
+            self.up_proj = torch.nn.Linear(d, df, bias=False)
             self.down_proj = torch.nn.Linear(df, d, bias=False)
 
     class TinyLayer(torch.nn.Module):
@@ -91,7 +94,9 @@ def _build_tiny_model_unit_norms():
             # γ-only norm placeholder; γ pre-set to 1 so fuse_norms is a no-op.
             self.input_layernorm = torch.nn.LayerNorm(d, elementwise_affine=True, bias=False)
             self.self_attn = TinyAttn(d, dk)
-            self.post_attention_layernorm = torch.nn.LayerNorm(d, elementwise_affine=True, bias=False)
+            self.post_attention_layernorm = torch.nn.LayerNorm(
+                d, elementwise_affine=True, bias=False
+            )
             self.mlp = TinyMLP(d, df)
 
     class TinyModel(torch.nn.Module):
@@ -106,26 +111,30 @@ def _build_tiny_model_unit_norms():
     torch.manual_seed(13)
     m = TinyModel().double()
     # γ = 1 everywhere → fuse_norms is a no-op → the test isolates rotation.
-    for ln in [m.model.layers[0].input_layernorm,
-               m.model.layers[0].post_attention_layernorm,
-               m.model.norm]:
+    for ln in [
+        m.model.layers[0].input_layernorm,
+        m.model.layers[0].post_attention_layernorm,
+        m.model.norm,
+    ]:
         ln.weight.data.fill_(1.0)
     return m
 
 
 def test_rotation_preserves_embed_qproj_dot():
     """With γ=1, rotating tok_embed (out axis) and q_proj (in axis) cancels:
-        (emb_row · H) · (q_row · H)ᵀ = emb_row · q_rowᵀ
+    (emb_row · H) · (q_row · H)ᵀ = emb_row · q_rowᵀ
     """
     from turboquant.turboquant import apply_residual_rotation
+
     m = _build_tiny_model_unit_norms()
 
     x = torch.randint(0, 32, (1, 5))
-    pre  = m.model.embed_tokens(x) @ m.model.layers[0].self_attn.q_proj.weight.t()
+    pre = m.model.embed_tokens(x) @ m.model.layers[0].self_attn.q_proj.weight.t()
     apply_residual_rotation(m, block_size=128)
     post = m.model.embed_tokens(x) @ m.model.layers[0].self_attn.q_proj.weight.t()
-    assert torch.allclose(pre, post, atol=1e-9), \
+    assert torch.allclose(pre, post, atol=1e-9), (
         f"rotation invariance broken: max diff {(pre - post).abs().max()}"
+    )
 
 
 def test_norm_fusion_preserves_attn_input_path():
@@ -139,23 +148,26 @@ def test_norm_fusion_preserves_attn_input_path():
     torch.manual_seed(17)
     m = _build_tiny_model_unit_norms()
     # Now scramble γ so fusion has real work to do.
-    for ln in [m.model.layers[0].input_layernorm,
-               m.model.layers[0].post_attention_layernorm,
-               m.model.norm]:
+    for ln in [
+        m.model.layers[0].input_layernorm,
+        m.model.layers[0].post_attention_layernorm,
+        m.model.norm,
+    ]:
         ln.weight.data = 0.5 + torch.rand_like(ln.weight).double()
 
     x = torch.randn(1, 5, 256, dtype=torch.float64)
     g = m.model.layers[0].input_layernorm.weight.data
     W = m.model.layers[0].self_attn.q_proj.weight.data
-    pre = (g * x) @ W.t()      # γ ⊙ x then linear
+    pre = (g * x) @ W.t()  # γ ⊙ x then linear
 
     fuse_norms_into_next(m)
 
     g2 = m.model.layers[0].input_layernorm.weight.data
     W2 = m.model.layers[0].self_attn.q_proj.weight.data
-    post = (g2 * x) @ W2.t()    # γ should now be 1; linear absorbed γ
-    assert torch.allclose(pre, post, atol=1e-12), \
+    post = (g2 * x) @ W2.t()  # γ should now be 1; linear absorbed γ
+    assert torch.allclose(pre, post, atol=1e-12), (
         f"fuse_norms_into_next changed output: max diff {(pre - post).abs().max()}"
+    )
     assert torch.allclose(g2, torch.ones_like(g2)), "γ wasn't reset to 1"
 
 
@@ -163,20 +175,23 @@ def test_bench_rotation_helps_quantization():
     """The marquee claim — rotation actually reduces Q4 MSE on heavy-tailed
     weights — has to hold or the whole story is wrong."""
     from turboquant.bench import heavy_tailed_weight, measure
+
     W = heavy_tailed_weight(n_rows=512, n_cols=2048, seed=3)
     base = measure(W, bits=4, rotated=False)
-    rot  = measure(W, bits=4, rotated=True)
+    rot = measure(W, bits=4, rotated=True)
     # Conservative threshold: rotation must improve MSE by at least 2× on
     # this synthetic. Real LLaMA weights typically see 3-5×.
-    assert rot.mse < base.mse / 2.0, \
+    assert rot.mse < base.mse / 2.0, (
         f"rotation didn't help enough: base MSE={base.mse:.3e}, rot MSE={rot.mse:.3e}"
+    )
 
 
 def test_kv_rotation_preserves_attention_score():
     """Per-head Hadamard inside attention's head_dim must preserve QK^T:
-        (Q H) (K H)^T = Q H H^T K^T = Q K^T
+    (Q H) (K H)^T = Q H H^T K^T = Q K^T
     """
     from turboquant.kvcache import rotate_kv_for_cache_quant
+
     m = _build_tiny_model_unit_norms()
 
     # Synthetic Q, K from a random hidden state.
@@ -191,5 +206,6 @@ def test_kv_rotation_preserves_attention_score():
     Wq2 = m.model.layers[0].self_attn.q_proj.weight.data
     Wk2 = m.model.layers[0].self_attn.k_proj.weight.data
     post_qk = (h @ Wq2.t()) @ (h @ Wk2.t()).t()
-    assert torch.allclose(pre_qk, post_qk, atol=1e-9), \
+    assert torch.allclose(pre_qk, post_qk, atol=1e-9), (
         f"KV rotation changed Q·K^T: max diff {(pre_qk - post_qk).abs().max()}"
+    )

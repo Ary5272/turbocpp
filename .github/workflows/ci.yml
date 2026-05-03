@@ -8,12 +8,30 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read   # default-deny; jobs grant only what they need
+  contents: read
 
 jobs:
-  # ─── TurboQuant python tests ─────────────────────────────────────────────
-  turboquant:
-    name: turboquant / python ${{ matrix.python }}
+  # ─── lint + type check (fast, fails first) ───────────────────────────────
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with: { persist-credentials: false }
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with: { python-version: "3.12" }
+      - run: |
+          python -m pip install --upgrade pip
+          pip install ruff mypy
+      - name: ruff
+        run: ruff check turboquant scripts
+      - name: ruff format check
+        run: ruff format --check turboquant scripts
+      - name: mypy (loose, info-only)
+        run: mypy turboquant --ignore-missing-imports --no-error-summary || true
+
+  # ─── pure-python tests (no torch dep) ────────────────────────────────────
+  cli-tests:
+    needs: lint
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -21,8 +39,28 @@ jobs:
         python: ["3.10", "3.11", "3.12"]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          persist-credentials: false
+        with: { persist-credentials: false }
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with: { python-version: "${{ matrix.python }}" }
+      - name: Install (no torch)
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest
+          pip install -e .
+      - name: pytest (no-runtime parts)
+        run: pytest -q turboquant/test_cli.py
+
+  # ─── rotation math tests (need torch) ────────────────────────────────────
+  turboquant-math:
+    needs: lint
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with: { persist-credentials: false }
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with: { python-version: "${{ matrix.python }}" }
       - name: Install
@@ -33,9 +71,9 @@ jobs:
       - name: Test
         run: pytest -q turboquant/test_turboquant.py
 
-  # ─── Standalone C++ engine tests ─────────────────────────────────────────
+  # ─── extras/standalone C++ engine tests ──────────────────────────────────
   standalone:
-    name: extras/standalone / ${{ matrix.os }}
+    needs: lint
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -43,8 +81,7 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          persist-credentials: false
+        with: { persist-credentials: false }
       - name: Configure
         run: cmake -S extras/standalone -B extras/standalone/build -DCMAKE_BUILD_TYPE=Release
       - name: Build

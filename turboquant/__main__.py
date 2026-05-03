@@ -4,12 +4,12 @@ Back-compat shim: a bare `python -m turboquant <model_dir> <out_dir>` (the
 pre-0.3 invocation) still works — we forward to `rotate <args>` if the
 first positional looks like a path rather than a known subcommand name.
 """
+
 from __future__ import annotations
 
 import sys
 
 from .cli import main as _main
-
 
 _KNOWN = {"rotate", "bench", "generate", "serve", "-h", "--help"}
 

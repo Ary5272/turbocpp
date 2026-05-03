@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "turbocpp"
-version = "0.6.1"
+version = "0.7.0"
 description = "llama.cpp + TurboQuant — Hadamard-rotation preprocessor for LLM weights, plus a unified CLI on top of llama-cpp-python"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -37,7 +37,7 @@ dependencies = [
 # Pulls in llama-cpp-python (the actual inference engine). Use:
 #   pip install turbocpp[runtime]
 runtime = ["llama-cpp-python>=0.3.2"]
-dev = ["pytest>=7.0", "ruff>=0.5", "build>=1.0", "twine>=5.0"]
+dev = ["pytest>=7.0", "ruff>=0.5", "mypy>=1.10", "build>=1.0", "twine>=5.0"]
 demo = ["gradio>=4.40,<7.0", "matplotlib>=3.7", "pillow>=10.0"]
 
 [project.scripts]
@@ -59,3 +59,32 @@ include = ["turboquant*"]
 [tool.pytest.ini_options]
 testpaths = ["turboquant"]
 addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["extras", "patches", "build", "dist"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+ignore = [
+    "E501",   # line length — handled by formatter
+    "E701",   # `if x: y` on one line — fine for short guards
+    "E702",   # multi-statement-on-one-line — common in tight test setup
+    "E741",   # ambiguous var names ('l') — fine in math code
+    "B008",   # default arg func call — argparse type=Path needs it
+    "SIM108", # ternary nag
+    "SIM102", # nested-if-collapse — sometimes clearer expanded
+    "SIM105", # contextlib.suppress nag
+    "UP015",  # open(..., "r") nag
+]
+
+[tool.ruff.lint.per-file-ignores]
+"turboquant/test_*.py" = ["S101", "F401"]
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+warn_unused_ignores = false
+disable_error_code = ["import-untyped", "no-untyped-def", "var-annotated"]
+exclude = ["extras", "patches", "build", "dist"]

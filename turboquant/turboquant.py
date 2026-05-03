@@ -27,13 +27,12 @@ Result: a rotated state_dict that you can save and feed straight into
 llama.cpp's convert_hf_to_gguf.py + llama-quantize. NO inference-time
 changes, NO custom GGML type required.
 """
+
 from __future__ import annotations
 
-import math
-from typing import Iterable, Optional
+from collections.abc import Iterable
 
 import torch
-import torch.nn as nn
 
 from .hadamard import block_hadamard_inplace
 
@@ -53,31 +52,41 @@ def _layers(model) -> Iterable:
 
 
 def _norm_input_attn(layer):
-    return getattr(layer, "input_layernorm", None) or \
-           getattr(layer, "ln_1", None) or \
-           getattr(layer, "attention_norm", None)
+    return (
+        getattr(layer, "input_layernorm", None)
+        or getattr(layer, "ln_1", None)
+        or getattr(layer, "attention_norm", None)
+    )
+
 
 def _norm_post_attn(layer):
-    return getattr(layer, "post_attention_layernorm", None) or \
-           getattr(layer, "ln_2", None) or \
-           getattr(layer, "ffn_norm", None)
+    return (
+        getattr(layer, "post_attention_layernorm", None)
+        or getattr(layer, "ln_2", None)
+        or getattr(layer, "ffn_norm", None)
+    )
+
 
 def _attn_qkv(layer):
     a = layer.self_attn if hasattr(layer, "self_attn") else layer.attention
     return a.q_proj, a.k_proj, a.v_proj
 
+
 def _attn_o(layer):
     a = layer.self_attn if hasattr(layer, "self_attn") else layer.attention
     return a.o_proj if hasattr(a, "o_proj") else a.wo
 
+
 def _mlp(layer):
     return layer.mlp if hasattr(layer, "mlp") else layer.feed_forward
+
 
 def _ffn_gate_up(layer):
     m = _mlp(layer)
     if hasattr(m, "gate_proj") and hasattr(m, "up_proj"):
         return m.gate_proj, m.up_proj
-    return m.w1, m.w3   # LLaMA-1 names
+    return m.w1, m.w3  # LLaMA-1 names
+
 
 def _ffn_down(layer):
     m = _mlp(layer)
@@ -97,7 +106,7 @@ def fuse_norms_into_next(model) -> None:
         if norm1 is not None and getattr(norm1, "weight", None) is not None:
             g = norm1.weight.data
             for w in _attn_qkv(layer):
-                w.weight.data.mul_(g)        # broadcast on input dim
+                w.weight.data.mul_(g)  # broadcast on input dim
             norm1.weight.data.fill_(1.0)
 
         norm2 = _norm_post_attn(layer)
@@ -108,13 +117,15 @@ def fuse_norms_into_next(model) -> None:
             norm2.weight.data.fill_(1.0)
 
     # Final norm before lm_head (if present).
-    final_norm = (
-        getattr(getattr(model, "model", None), "norm", None)
-        or getattr(model, "final_layer_norm", None)
+    final_norm = getattr(getattr(model, "model", None), "norm", None) or getattr(
+        model, "final_layer_norm", None
     )
     lm_head = getattr(model, "lm_head", None)
-    if final_norm is not None and lm_head is not None and \
-       getattr(final_norm, "weight", None) is not None:
+    if (
+        final_norm is not None
+        and lm_head is not None
+        and getattr(final_norm, "weight", None) is not None
+    ):
         g = final_norm.weight.data
         lm_head.weight.data.mul_(g)
         final_norm.weight.data.fill_(1.0)
@@ -136,9 +147,8 @@ def fuse_norms_into_next(model) -> None:
 @torch.no_grad()
 def apply_residual_rotation(model, block_size: int = 128) -> None:
     # Rotate token embeddings (output axis = last dim).
-    tok_embed = (
-        getattr(getattr(model, "model", None), "embed_tokens", None)
-        or getattr(model, "wte", None)
+    tok_embed = getattr(getattr(model, "model", None), "embed_tokens", None) or getattr(
+        model, "wte", None
     )
     if tok_embed is not None:
         block_hadamard_inplace(tok_embed.weight.data, axis=-1, block=block_size)
