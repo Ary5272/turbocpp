@@ -1,11 +1,11 @@
 """Detect host CPU features and pick the best prebuilt llama-cpp-python
-wheel from AIencoder/llama-cpp-wheels.
+wheel from AIencoder/TurboCpp_Wheels.
 
 Usage:
     from turboquant.cpu_features import best_wheel_url
     url = best_wheel_url()           # auto for current host
 
-Each variant is a real binary at /datasets/AIencoder/llama-cpp-wheels.
+Each variant is a real binary at /datasets/AIencoder/TurboCpp_Wheels.
 We climb a feature ladder and pick the most aggressive variant the host
 actually supports — same idea as `gcc -march=native` at install time
 instead of compile time.
@@ -28,7 +28,7 @@ from typing import List
 
 LLAMA_CPP_VERSION = "0.3.16"
 WHEEL_BASE = (
-    "https://huggingface.co/datasets/AIencoder/llama-cpp-wheels/resolve/main/"
+    "https://huggingface.co/datasets/AIencoder/TurboCpp_Wheels/resolve/main/"
     "llama_cpp_python-{ver}+{variant}-cp{py}-cp{py}-{plat}.whl"
 )
 
@@ -63,7 +63,7 @@ def _cpu_flags() -> set[str]:
 
 
 def detect_variant() -> str:
-    """Return the most aggressive AIencoder/llama-cpp-wheels variant tag
+    """Return the most aggressive AIencoder/TurboCpp_Wheels variant tag
     the host CPU supports."""
     flags = _cpu_flags()
     has = flags.__contains__
@@ -126,7 +126,7 @@ GPU_VARIANTS = ("cuda12", "cuda11", "vulkan", "rocm", "sycl", "opencl")
 def gpu_wheel_url(backend: str, version: str = LLAMA_CPP_VERSION,
                   py_version: str | None = None) -> str:
     """URL for a GPU-accelerated llama-cpp-python wheel from
-    AIencoder/llama-cpp-wheels. backend ∈ {cuda12, cuda11, vulkan, rocm,
+    AIencoder/TurboCpp_Wheels. backend ∈ {cuda12, cuda11, vulkan, rocm,
     sycl, opencl}. The dataset hosts these for cp310/cp311/cp312 on
     manylinux + win_amd64; not all combos exist for every version."""
     if backend not in GPU_VARIANTS:

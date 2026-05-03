@@ -2,7 +2,7 @@
 #
 # turbocpp Docker image — same workflow accessibility as llama.cpp,
 # but everything is installed from PREBUILT WHEELS hosted at
-# https://huggingface.co/datasets/AIencoder/llama-cpp-wheels.
+# https://huggingface.co/datasets/AIencoder/TurboCpp_Wheels.
 #
 # No C++ compile step → image build is ~30 seconds instead of ~10 minutes,
 # and the image works on any x86_64 host with AVX2 + FMA + F16C
@@ -59,9 +59,9 @@ RUN apt-get update \
 FROM base AS cpu
 
 # Pinned wheel URLs. Override with --build-arg if you want a different
-# CPU feature set (avx512, vnni, amx, …) from AIencoder/llama-cpp-wheels.
-ARG LLAMA_CPP_WHEEL_URL=https://huggingface.co/datasets/AIencoder/llama-cpp-wheels/resolve/main/llama_cpp_python-0.3.16%2Bbasic_avx2_fma_f16c-cp312-cp312-manylinux_2_31_x86_64.whl
-ARG TURBOCPP_WHEEL_URL=https://huggingface.co/datasets/AIencoder/llama-cpp-wheels/resolve/main/turbocpp/turbocpp-0.3.0-py3-none-any.whl
+# CPU feature set (avx512, vnni, amx, …) from AIencoder/TurboCpp_Wheels.
+ARG LLAMA_CPP_WHEEL_URL=https://huggingface.co/datasets/AIencoder/TurboCpp_Wheels/resolve/main/llama_cpp_python-0.3.16%2Bbasic_avx2_fma_f16c-cp312-cp312-manylinux_2_31_x86_64.whl
+ARG TURBOCPP_WHEEL_URL=https://huggingface.co/datasets/AIencoder/TurboCpp_Wheels/resolve/main/turbocpp/turbocpp-0.3.0-py3-none-any.whl
 
 RUN pip install \
         "${LLAMA_CPP_WHEEL_URL}" \

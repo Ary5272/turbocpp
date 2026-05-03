@@ -7,9 +7,9 @@
 | | |
 |---|---|
 | 🚀 **Live demo** | [huggingface.co/spaces/AIencoder/turboquant-visualizer](https://huggingface.co/spaces/AIencoder/turboquant-visualizer) |
-| 📦 **Python package** | `pip install https://huggingface.co/datasets/AIencoder/llama-cpp-wheels/resolve/main/turbocpp/turbocpp-0.3.0-py3-none-any.whl` |
+| 📦 **Python package** | `pip install https://huggingface.co/datasets/AIencoder/TurboCpp_Wheels/resolve/main/turbocpp/turbocpp-0.3.0-py3-none-any.whl` |
 | 🐳 **Docker images** | `docker pull ghcr.io/ary5272/turbocpp:cpu` (also `:server`, `:turboquant`) |
-| 🔧 **Wheel mirror** | [datasets/AIencoder/llama-cpp-wheels](https://huggingface.co/datasets/AIencoder/llama-cpp-wheels) — prebuilt llama-cpp-python for every CPU feature combo |
+| 🔧 **Wheel mirror** | [datasets/AIencoder/TurboCpp_Wheels](https://huggingface.co/datasets/AIencoder/TurboCpp_Wheels) — prebuilt llama-cpp-python for every CPU feature combo |
 
 ## Install
 
@@ -20,10 +20,10 @@ pip install https://github.com/Ary5272/turbocpp/releases/latest/download/turbocp
 # Plus the inference engine (also a prebuilt wheel — never source-builds):
 pip install \
     https://github.com/Ary5272/turbocpp/releases/latest/download/turbocpp-py3-none-any.whl \
-    https://huggingface.co/datasets/AIencoder/llama-cpp-wheels/resolve/main/llama_cpp_python-0.3.16%2Bbasic_avx2_fma_f16c-cp312-cp312-manylinux_2_31_x86_64.whl
+    https://huggingface.co/datasets/AIencoder/TurboCpp_Wheels/resolve/main/llama_cpp_python-0.3.16%2Bbasic_avx2_fma_f16c-cp312-cp312-manylinux_2_31_x86_64.whl
 
 # Or the HF dataset mirror if GitHub is blocked at your endpoint:
-pip install https://huggingface.co/datasets/AIencoder/llama-cpp-wheels/resolve/main/turbocpp/turbocpp-0.3.0-py3-none-any.whl
+pip install https://huggingface.co/datasets/AIencoder/TurboCpp_Wheels/resolve/main/turbocpp/turbocpp-0.3.0-py3-none-any.whl
 ```
 
 After install you get a `turbocpp` CLI:
@@ -93,7 +93,7 @@ docker run --rm -v ~/models:/models ghcr.io/ary5272/turbocpp:turboquant \
 ```
 
 All three images install llama-cpp-python from a **prebuilt wheel** at
-`AIencoder/llama-cpp-wheels`. No source compile step → image build takes
+`AIencoder/TurboCpp_Wheels`. No source compile step → image build takes
 ~30 seconds instead of ~10 minutes, and the same image runs on any
 x86_64 host with AVX2 + FMA + F16C.
 

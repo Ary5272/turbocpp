@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "turbocpp"
-version = "0.5.0"
+version = "0.6.0"
 description = "llama.cpp + TurboQuant — Hadamard-rotation preprocessor for LLM weights, plus a unified CLI on top of llama-cpp-python"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -50,7 +50,7 @@ turboquant = "turboquant.cli:main"
 Homepage = "https://github.com/Ary5272/turbocpp"
 Issues = "https://github.com/Ary5272/turbocpp/issues"
 HuggingFaceSpace = "https://huggingface.co/spaces/AIencoder/turboquant-visualizer"
-WheelMirror = "https://huggingface.co/datasets/AIencoder/llama-cpp-wheels"
+WheelMirror = "https://huggingface.co/datasets/AIencoder/TurboCpp_Wheels"
 
 [tool.setuptools.packages.find]
 where = ["."]

@@ -77,7 +77,7 @@ def _import_llama_cpp():
             "llama-cpp-python isn't installed. either:\n"
             "  pip install 'turbocpp[runtime]'\n"
             "or, on a platform where source-build fails (e.g. HF Spaces):\n"
-            "  pip install https://huggingface.co/datasets/AIencoder/llama-cpp-wheels/"
+            "  pip install https://huggingface.co/datasets/AIencoder/TurboCpp_Wheels/"
             "resolve/main/llama_cpp_python-0.3.16%2Bbasic_avx2_fma_f16c-cp312-"
             "cp312-manylinux_2_31_x86_64.whl"
         )
@@ -96,19 +96,20 @@ def _cmd_generate(args) -> int:
         n_threads=args.threads or None,
         verbose=False,
     )
-    t0 = time.time()
-    out = llm(
+    t0 = time.time(); n = 0
+    # Stream tokens as they're generated — no buffering wait.
+    for chunk in llm(
         args.prompt,
         max_tokens=args.n_predict,
         temperature=args.temperature,
         top_p=args.top_p,
         echo=False,
-    )
+        stream=True,
+    ):
+        piece = chunk["choices"][0]["text"]
+        sys.stdout.write(piece); sys.stdout.flush()
+        n += 1
     dt = time.time() - t0
-    text = out["choices"][0]["text"]
-    n = out["usage"]["completion_tokens"]
-    sys.stdout.write(text)
-    sys.stdout.flush()
     print(
         f"\n\n[{n} tokens in {dt:.2f}s -> {n/max(dt,1e-3):.1f} tok/s]",
         file=sys.stderr,
@@ -116,44 +117,126 @@ def _cmd_generate(args) -> int:
     return 0
 
 
-def _cmd_speculative(args) -> int:
+def _cmd_chat(args) -> int:
+    """Multi-turn chat REPL using llama-cpp-python's `create_chat_completion`,
+    which auto-applies the model's chat template (LLaMA-3, Qwen, ChatML, …
+    inferred from the GGUF metadata)."""
     err = _import_llama_cpp()
     if err:
         print(err, file=sys.stderr)
         return 2
     from llama_cpp import Llama
-    from .speculative import speculative_generate
-
-    common = dict(n_ctx=args.ctx, n_threads=args.threads or None,
-                  verbose=False, logits_all=True)
-    target = Llama(model_path=args.model, **common)
-    draft  = Llama(model_path=args.draft,  **common)
-
-    # Tokenize once via the target's tokenizer (must match draft's by family).
-    prompt_ids = target.tokenize(args.prompt.encode("utf-8"), add_bos=True)
-    eos = target.token_eos()
-
-    def emit(_id, piece):
-        sys.stdout.write(piece); sys.stdout.flush()
-
-    out, stats = speculative_generate(
-        target=target, draft=draft,
-        prompt_tokens=list(prompt_ids),
-        max_new_tokens=args.n_predict,
-        draft_lookahead=args.lookahead,
-        eos_token=eos,
-        on_token=emit,
+    llm = Llama(
+        model_path=args.model,
+        n_ctx=args.ctx,
+        n_threads=args.threads or None,
+        chat_format=args.chat_format or None,   # None = auto from GGUF
+        verbose=False,
     )
-    print()
-    print(
-        f"\n[{len(out)} tok in {stats.decode_seconds:.2f}s "
-        f"= {len(out)/max(stats.decode_seconds,1e-3):.1f} tok/s | "
-        f"accept {stats.accept_rate*100:.0f}% "
-        f"({stats.accepted}/{stats.proposed}) | "
-        f"speedup vs single-target ≈ {stats.speedup_factor:.2f}×]",
-        file=sys.stderr,
-    )
+    msgs = []
+    if args.system:
+        msgs.append({"role": "system", "content": args.system})
+    print("turbocpp chat — Ctrl-D / EOF to exit, /reset to clear history",
+          file=sys.stderr)
+    while True:
+        try:
+            user = input("\n› ")
+        except (EOFError, KeyboardInterrupt):
+            print(); return 0
+        if not user.strip():
+            continue
+        if user.strip() == "/reset":
+            msgs = ([{"role": "system", "content": args.system}]
+                    if args.system else [])
+            print("(history cleared)", file=sys.stderr); continue
+        msgs.append({"role": "user", "content": user})
+        reply = ""
+        for chunk in llm.create_chat_completion(
+            messages=msgs,
+            max_tokens=args.n_predict,
+            temperature=args.temperature,
+            stream=True,
+        ):
+            delta = chunk["choices"][0]["delta"].get("content", "")
+            sys.stdout.write(delta); sys.stdout.flush()
+            reply += delta
+        msgs.append({"role": "assistant", "content": reply})
+
+
+def _cmd_info(args) -> int:
+    """Print the runtime topology: which wheel, which backends are
+    compiled in, llama.cpp image tag, model paths, etc."""
+    import json, platform, shutil
+    from . import __version__
+    from .cpu_features import detect_variant, best_wheel_url
+    from .llama_docker import DEFAULT_IMAGE, docker_available, image_present
+
+    info = {
+        "turbocpp": __version__,
+        "python":   platform.python_version(),
+        "platform": f"{platform.system()} {platform.release()} {platform.machine()}",
+        "cpu_variant": detect_variant(),
+        "best_wheel_url": best_wheel_url(),
+        "docker_present": docker_available(),
+        "llama_image": DEFAULT_IMAGE,
+        "llama_image_pulled": image_present(DEFAULT_IMAGE) if docker_available() else False,
+    }
+    try:
+        import llama_cpp                                  # noqa: F401
+        info["llama_cpp_python"] = getattr(llama_cpp, "__version__", "?")
+        from llama_cpp import llama_supports_gpu_offload  # type: ignore
+        info["llama_gpu_offload"] = bool(llama_supports_gpu_offload())
+    except ImportError:
+        info["llama_cpp_python"] = None
+    if shutil.which("nvidia-smi"):
+        info["gpu"] = "nvidia (nvidia-smi present)"
+    elif shutil.which("rocminfo"):
+        info["gpu"] = "amd (rocminfo present)"
+    elif platform.system() == "Darwin" and platform.machine() == "arm64":
+        info["gpu"] = "apple silicon (Metal available)"
+    else:
+        info["gpu"] = None
+    print(json.dumps(info, indent=2))
     return 0
+
+
+def _cmd_speculative(args) -> int:
+    """Speculative decoding via llama.cpp's own `llama-speculative` binary
+    (delegated through the official Docker image). The previous in-process
+    Python harness mutated `Llama.n_tokens` to roll back the KV cache —
+    that's not a public API, breaks across llama-cpp-python versions, and
+    silently produced wrong results when it didn't crash. This path uses
+    the upstream-tested implementation."""
+    from .llama_docker import run_tool, DEFAULT_IMAGE
+    from pathlib import Path
+
+    target_p = Path(args.model).resolve()
+    draft_p  = Path(args.draft).resolve()
+    if target_p.parent != draft_p.parent:
+        print("note: target and draft live in different dirs; mounting both",
+              file=sys.stderr)
+
+    mounts = {str(target_p.parent): "/m_target"}
+    if draft_p.parent != target_p.parent:
+        mounts[str(draft_p.parent)] = "/m_draft"
+    target_in_ctr = f"/m_target/{target_p.name}"
+    draft_in_ctr  = (f"/m_target/{draft_p.name}"
+                     if draft_p.parent == target_p.parent
+                     else f"/m_draft/{draft_p.name}")
+
+    forwarded = [
+        "-m",          target_in_ctr,
+        "-md",         draft_in_ctr,
+        "-p",          args.prompt,
+        "-n",          str(args.n_predict),
+        "--draft-max", str(args.lookahead),
+        "-c",          str(args.ctx),
+    ]
+    if args.threads:
+        forwarded += ["-t", str(args.threads)]
+    return run_tool("llama-speculative", forwarded,
+                    image=args.image or DEFAULT_IMAGE,
+                    mounts=mounts)
 
 
 def _cmd_llama_passthrough(args) -> int:
@@ -299,7 +382,26 @@ def main(argv=None) -> int:
                      help="number of draft tokens proposed per round")
     psp.add_argument("--ctx",               type=int, default=2048)
     psp.add_argument("--threads",           type=int, default=0)
+    psp.add_argument("--image",             default=None,
+                     help="override llama.cpp image tag (e.g. :full-cuda)")
     psp.set_defaults(func=_cmd_speculative)
+
+    # chat (multi-turn REPL with auto chat template)
+    pc = sub.add_parser("chat", help="multi-turn chat REPL (auto chat template)")
+    pc.add_argument("-m", "--model",       required=True, help="GGUF path")
+    pc.add_argument("-s", "--system",      default="", help="system prompt")
+    pc.add_argument("-n", "--n-predict",   type=int,   default=512)
+    pc.add_argument("-t", "--temperature", type=float, default=0.7)
+    pc.add_argument("--ctx",               type=int,   default=4096)
+    pc.add_argument("--threads",           type=int,   default=0)
+    pc.add_argument("--chat-format",       default="",
+                    help="force template (llama-3, chatml, mistral-instruct, "
+                         "…); blank = auto from GGUF metadata")
+    pc.set_defaults(func=_cmd_chat)
+
+    # info
+    pi = sub.add_parser("info", help="show runtime topology (wheel, backends, GPU, …)")
+    pi.set_defaults(func=_cmd_info)
 
     # llama-cpp tool passthroughs (delegate to the official llama.cpp image)
     psp_tools = sub.add_parser(
