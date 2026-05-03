@@ -58,19 +58,17 @@ RUN apt-get update \
 # ============================================================================
 FROM base AS cpu
 
-# Both llama-cpp-python and turbocpp ship prebuilt wheels on PyPI.
-# We pin llama-cpp-python to a version with a known cp312 wheel and add
-# --only-binary=llama-cpp-python so pip will FAIL LOUDLY rather than
-# silently fall back to a source build that needs cmake/g++ (which the
-# slim base image deliberately does not have).
-#
-# Override either with --build-arg to use a CPU-feature-tuned wheel:
-#   docker build --build-arg LLAMA_CPP_PKG="$(turbocpp pick-wheel)" .
-ARG LLAMA_CPP_PKG="llama-cpp-python==0.3.16"
+# turbocpp comes from PyPI (where it has a real wheel). llama-cpp-python
+# does NOT have prebuilt wheels on PyPI — they're only on the HF dataset
+# mirror (the whole reason the mirror exists). Until AIencoder/TurboCpp_Wheels
+# is populated (run scripts/mirror_wheels.py once), point at the still-live
+# AIencoder/llama-cpp-wheels — the rename hasn't broken anything as long as
+# the old URL keeps working.
+ARG LLAMA_CPP_WHEEL_URL=https://huggingface.co/datasets/AIencoder/llama-cpp-wheels/resolve/main/llama_cpp_python-0.3.16%2Bbasic_avx2_fma_f16c-cp312-cp312-manylinux_2_31_x86_64.whl
 ARG TURBOCPP_PKG="turbocpp"
 
-RUN pip install --only-binary=llama-cpp-python \
-        "${LLAMA_CPP_PKG}" \
+RUN pip install --only-binary=:all: \
+        "${LLAMA_CPP_WHEEL_URL}" \
         "${TURBOCPP_PKG}" \
         "huggingface_hub>=0.24,<1.0" \
         "gguf>=0.10"
