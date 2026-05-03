@@ -58,16 +58,18 @@ RUN apt-get update \
 # ============================================================================
 FROM base AS cpu
 
-# Default install path: PyPI for both llama-cpp-python and turbocpp itself.
-# Both ship prebuilt wheels there, so still no source compile.
+# Both llama-cpp-python and turbocpp ship prebuilt wheels on PyPI.
+# We pin llama-cpp-python to a version with a known cp312 wheel and add
+# --only-binary=llama-cpp-python so pip will FAIL LOUDLY rather than
+# silently fall back to a source build that needs cmake/g++ (which the
+# slim base image deliberately does not have).
 #
-# Override either with --build-arg to use a CPU-feature-tuned wheel from
-# AIencoder/TurboCpp_Wheels (pick a variant via `turbocpp pick-wheel`):
+# Override either with --build-arg to use a CPU-feature-tuned wheel:
 #   docker build --build-arg LLAMA_CPP_PKG="$(turbocpp pick-wheel)" .
-ARG LLAMA_CPP_PKG="llama-cpp-python>=0.3.2"
+ARG LLAMA_CPP_PKG="llama-cpp-python==0.3.16"
 ARG TURBOCPP_PKG="turbocpp"
 
-RUN pip install \
+RUN pip install --only-binary=llama-cpp-python \
         "${LLAMA_CPP_PKG}" \
         "${TURBOCPP_PKG}" \
         "huggingface_hub>=0.24,<1.0" \
@@ -102,9 +104,13 @@ CMD []
 # ============================================================================
 FROM cpu AS turboquant
 
-# Torch Wheel made full for full compatibility
-# FIXED: Added the missing backslash after 'pip install'
-RUN pip install \
+# Torch + transformers + co. --only-binary=:all: forces every package to
+# come from a wheel; combined with the cpu stage's llama-cpp-python pin
+# this prevents pip's resolver from upgrading + source-rebuilding it.
+# Use the official PyTorch CPU index so the torch wheel is the slim
+# (~200 MB) CPU build, not the 2 GB CUDA one.
+RUN pip install --only-binary=:all: \
+        --extra-index-url https://download.pytorch.org/whl/cpu \
         "torch>=2.0" \
         "transformers>=4.40" \
         "safetensors>=0.4" \
