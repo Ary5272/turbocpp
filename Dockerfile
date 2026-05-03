@@ -58,14 +58,18 @@ RUN apt-get update \
 # ============================================================================
 FROM base AS cpu
 
-# Pinned wheel URLs. Override with --build-arg if you want a different
-# CPU feature set (avx512, vnni, amx, …) from AIencoder/TurboCpp_Wheels.
-ARG LLAMA_CPP_WHEEL_URL=https://huggingface.co/datasets/AIencoder/TurboCpp_Wheels/resolve/main/llama_cpp_python-0.3.16%2Bbasic_avx2_fma_f16c-cp312-cp312-manylinux_2_31_x86_64.whl
-ARG TURBOCPP_WHEEL_URL=https://huggingface.co/datasets/AIencoder/TurboCpp_Wheels/resolve/main/turbocpp/turbocpp-0.3.0-py3-none-any.whl
+# Default install path: PyPI for both llama-cpp-python and turbocpp itself.
+# Both ship prebuilt wheels there, so still no source compile.
+#
+# Override either with --build-arg to use a CPU-feature-tuned wheel from
+# AIencoder/TurboCpp_Wheels (pick a variant via `turbocpp pick-wheel`):
+#   docker build --build-arg LLAMA_CPP_PKG="$(turbocpp pick-wheel)" .
+ARG LLAMA_CPP_PKG="llama-cpp-python>=0.3.2"
+ARG TURBOCPP_PKG="turbocpp"
 
 RUN pip install \
-        "${LLAMA_CPP_WHEEL_URL}" \
-        "${TURBOCPP_WHEEL_URL}" \
+        "${LLAMA_CPP_PKG}" \
+        "${TURBOCPP_PKG}" \
         "huggingface_hub>=0.24,<1.0" \
         "gguf>=0.10"
 

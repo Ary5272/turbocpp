@@ -1,6 +1,12 @@
 """Detect host CPU features and pick the best prebuilt llama-cpp-python
 wheel from AIencoder/TurboCpp_Wheels.
 
+NOTE: the dataset is initially empty; populate it with
+   HF_TOKEN=hf_… python scripts/mirror_wheels.py
+before relying on `pip install $(turbocpp pick-wheel)`. PyPI's stock
+`pip install llama-cpp-python` works as a fall-back without any HF
+mirror — `pick-wheel` is for choosing a CPU-feature-tuned variant.
+
 Usage:
     from turboquant.cpu_features import best_wheel_url
     url = best_wheel_url()           # auto for current host
