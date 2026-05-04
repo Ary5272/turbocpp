@@ -72,10 +72,24 @@ def _cpu_flags() -> set[str]:
 def detect_variant() -> str:
     """Return the most aggressive AIencoder/TurboCpp_Wheels variant tag
     the host CPU supports."""
+    # Apple Silicon: x86 feature names are meaningless. The dataset's
+    # macOS arm64 wheels are built with Metal + Accelerate by default —
+    # the right "variant" is just `metal`.
+    if sys.platform == "darwin" and platform.machine() == "arm64":
+        return "metal"
+
     flags = _cpu_flags()
     has = flags.__contains__
 
-    # Walk the ladder top-down — pick the topmost match.
+    # arm64 on Linux (e.g. AWS Graviton, RPi 5, ampere) — pick a NEON build.
+    if platform.machine().lower() in ("aarch64", "arm64") and sys.platform != "darwin":
+        if has("sve2"):
+            return "neon_sve2"
+        if has("sve"):
+            return "neon_sve"
+        return "neon"
+
+    # x86_64 ladder, top-down — pick the topmost match.
     if (
         has("amx_tile")
         and has("avx512_bf16")
@@ -159,6 +173,10 @@ def candidate_urls() -> list[str]:
     fall-backs. Useful for `pip install --index-url …` style retry logic.
     """
     chosen = detect_variant()
+    # Each platform has its own ladder; outside x86_64 there's no
+    # meaningful fall-back chain.
+    if chosen.startswith("metal") or chosen.startswith("neon"):
+        return [best_wheel_url(chosen)]
     ladder = [
         "basic_avx512_fma_f16c_vnni_vbmi_bf16_amx",
         "basic_avx512_fma_f16c_vnni_vbmi",

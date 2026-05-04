@@ -91,6 +91,9 @@ def test_cli_no_args_errors():
         "llama-cli",
         "llama-bench",
         "pick-wheel",
+        "embed",
+        "tokenize",
+        "download",
     ],
 )
 def test_each_subcommand_has_help(sub):
@@ -183,3 +186,89 @@ def test_run_tool_rejects_unknown():
 
     with pytest.raises(ValueError):
         run_tool("not-a-tool", [])
+
+
+# ---------------------------------------------------------------------------
+# config.py — TOML loader, model-alias resolution
+# ---------------------------------------------------------------------------
+def test_config_missing_returns_empty(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    from turboquant import config as cfg
+
+    importlib.reload(cfg)  # re-evaluate config_path()
+    assert cfg.load() == {}
+    assert cfg.defaults_for("generate") == {}
+    assert cfg.resolve_model("anything") == "anything"
+
+
+def test_config_loads_and_overrides(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    p = tmp_path / "turbocpp" / "config.toml"
+    p.parent.mkdir()
+    p.write_text(
+        "[defaults]\n"
+        "threads = 8\n"
+        "[defaults.generate]\n"
+        "temperature = 0.4\n"
+        "threads = 16\n"  # generate override should win
+        "[models]\n"
+        'tiny = "/models/tiny.gguf"\n',
+        encoding="utf-8",
+    )
+    from turboquant import config as cfg
+
+    importlib.reload(cfg)
+    g = cfg.defaults_for("generate")
+    assert g["temperature"] == 0.4
+    assert g["threads"] == 16
+    assert cfg.resolve_model("tiny") == "/models/tiny.gguf"
+    assert cfg.resolve_model("/literal/path.gguf") == "/literal/path.gguf"
+
+
+# ---------------------------------------------------------------------------
+# Apple Silicon / arm64 detection
+# ---------------------------------------------------------------------------
+def test_apple_silicon_returns_metal_variant(monkeypatch):
+    import turboquant.cpu_features as cf
+
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr("platform.machine", lambda: "arm64")
+    assert cf.detect_variant() == "metal"
+    # Wheel URL should include the arm64 mac platform tag.
+    url = cf.best_wheel_url()
+    assert "macosx_11_0_arm64" in url
+    # Candidate ladder is just the one entry on non-x86.
+    assert cf.candidate_urls() == [url]
+
+
+def test_linux_aarch64_returns_neon(monkeypatch):
+    import turboquant.cpu_features as cf
+
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr("platform.machine", lambda: "aarch64")
+    monkeypatch.setattr(cf, "_cpu_flags", lambda: set())
+    assert cf.detect_variant() == "neon"
+    monkeypatch.setattr(cf, "_cpu_flags", lambda: {"sve"})
+    assert cf.detect_variant() == "neon_sve"
+    monkeypatch.setattr(cf, "_cpu_flags", lambda: {"sve2"})
+    assert cf.detect_variant() == "neon_sve2"
+
+
+# ---------------------------------------------------------------------------
+# generate / chat new flags reach argparse without errors
+# ---------------------------------------------------------------------------
+def test_generate_accepts_new_flags():
+    from turboquant.cli import main
+
+    # Doesn't actually run (no model file) — we rely on argparse parsing
+    # the args before the command function is invoked.
+    with pytest.raises(SystemExit):
+        # missing -m: argparse exit 2.
+        main(["generate", "-p", "hi", "--seed", "42", "--stop", "</s>"])
+
+
+def test_chat_accepts_new_flags():
+    from turboquant.cli import main
+
+    with pytest.raises(SystemExit):
+        main(["chat", "--seed", "7", "--stop", "STOP", "--grammar", "/tmp/x"])

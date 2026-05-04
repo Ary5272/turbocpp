@@ -87,6 +87,24 @@ def _import_llama_cpp():
         )
 
 
+def _build_grammar(args):
+    """Construct a llama_cpp.LlamaGrammar from --grammar (GBNF) or
+    --json-schema. Returns None when neither is provided."""
+    from pathlib import Path
+
+    from llama_cpp import LlamaGrammar  # type: ignore
+
+    if getattr(args, "grammar", None):
+        text = Path(args.grammar).read_text(encoding="utf-8")
+        return LlamaGrammar.from_string(text)
+    if getattr(args, "json_schema", None):
+        import json as _json
+
+        schema_text = Path(args.json_schema).read_text(encoding="utf-8")
+        return LlamaGrammar.from_json_schema(_json.dumps(_json.loads(schema_text)))
+    return None
+
+
 def _cmd_generate(args) -> int:
     err = _import_llama_cpp()
     if err:
@@ -96,12 +114,16 @@ def _cmd_generate(args) -> int:
 
     from llama_cpp import Llama
 
+    from .config import resolve_model
+
     llm = Llama(
-        model_path=args.model,
+        model_path=resolve_model(args.model),
         n_ctx=args.ctx,
         n_threads=args.threads or None,
+        seed=args.seed if args.seed != 0 else -1,
         verbose=False,
     )
+    grammar = _build_grammar(args)
     t0 = time.time()
     n = 0
     # Stream tokens as they're generated — no buffering wait.
@@ -110,6 +132,8 @@ def _cmd_generate(args) -> int:
         max_tokens=args.n_predict,
         temperature=args.temperature,
         top_p=args.top_p,
+        stop=args.stop or None,
+        grammar=grammar,
         echo=False,
         stream=True,
     ):
@@ -142,6 +166,10 @@ def _cmd_chat(args) -> int:
 
     from llama_cpp import Llama
 
+    from .config import resolve_model
+
+    args.model = resolve_model(args.model)
+
     cache_dir = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "turbocpp"
     cache_dir.mkdir(parents=True, exist_ok=True)
     model_id = hashlib.sha1(str(Path(args.model).resolve()).encode()).hexdigest()[:12]
@@ -162,8 +190,10 @@ def _cmd_chat(args) -> int:
         n_ctx=args.ctx,
         n_threads=args.threads or None,
         chat_format=args.chat_format or None,
+        seed=args.seed if args.seed != 0 else -1,
         verbose=False,
     )
+    grammar = _build_grammar(args)
 
     def save():
         try:
@@ -213,6 +243,8 @@ def _cmd_chat(args) -> int:
                 messages=msgs,
                 max_tokens=args.n_predict,
                 temperature=args.temperature,
+                stop=args.stop or None,
+                grammar=grammar,
                 stream=True,
             ):
                 delta = chunk["choices"][0]["delta"].get("content", "")
@@ -412,6 +444,136 @@ def _cmd_speculative(args) -> int:
     )
 
 
+def _cmd_embed(args) -> int:
+    """Compute sentence embeddings via llama-cpp-python's `Llama(embedding=True)`.
+    Reads each input line as a separate sentence, prints `tab`-joined floats."""
+    err = _import_llama_cpp()
+    if err:
+        print(err, file=sys.stderr)
+        return 2
+    import json
+
+    from llama_cpp import Llama
+
+    from .config import resolve_model
+
+    if args.input == "-" or not args.input:
+        sentences = [line.rstrip("\n") for line in sys.stdin if line.strip()]
+    else:
+        from pathlib import Path
+
+        sentences = [
+            line.rstrip("\n")
+            for line in Path(args.input).read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+    if not sentences and args.text:
+        sentences = [args.text]
+    if not sentences:
+        print("nothing to embed (use --text or pipe lines on stdin)", file=sys.stderr)
+        return 2
+
+    llm = Llama(
+        model_path=resolve_model(args.model),
+        n_ctx=args.ctx,
+        n_threads=args.threads or None,
+        embedding=True,
+        verbose=False,
+    )
+    out = []
+    for s in sentences:
+        v = llm.create_embedding(s)["data"][0]["embedding"]
+        out.append({"text": s, "embedding": v})
+
+    if args.format == "tsv":
+        for row in out:
+            sys.stdout.write("\t".join(f"{x:.6g}" for x in row["embedding"]) + "\n")
+    elif args.format == "jsonl":
+        for row in out:
+            sys.stdout.write(json.dumps(row) + "\n")
+    else:  # json
+        sys.stdout.write(json.dumps(out, indent=2))
+        sys.stdout.write("\n")
+    return 0
+
+
+def _cmd_tokenize(args) -> int:
+    """Tokenize a prompt and report ids + count. Useful for context-budget
+    estimation before a long generation."""
+    err = _import_llama_cpp()
+    if err:
+        print(err, file=sys.stderr)
+        return 2
+    from llama_cpp import Llama
+
+    from .config import resolve_model
+
+    if args.text:
+        text = args.text
+    elif args.input and args.input != "-":
+        from pathlib import Path
+
+        text = Path(args.input).read_text(encoding="utf-8")
+    else:
+        text = sys.stdin.read()
+
+    llm = Llama(
+        model_path=resolve_model(args.model),
+        n_ctx=args.ctx,
+        n_threads=args.threads or None,
+        verbose=False,
+    )
+    ids = llm.tokenize(text.encode("utf-8"), add_bos=args.add_bos)
+    if args.format == "ids":
+        print(" ".join(str(i) for i in ids))
+    elif args.format == "pieces":
+        for i in ids:
+            piece = llm.detokenize([i]).decode("utf-8", errors="replace")
+            print(f"{i}\t{piece!r}")
+    else:  # count
+        print(len(ids))
+    return 0
+
+
+def _cmd_download(args) -> int:
+    """Fetch a GGUF (or any single file) from a HuggingFace repo to
+    ~/.cache/turbocpp/models/. Wraps huggingface_hub with progress + a
+    sha256 integrity check on completion."""
+    try:
+        from huggingface_hub import hf_hub_download
+    except ImportError:
+        print(
+            "needs: pip install 'huggingface_hub<2.0'",
+            file=sys.stderr,
+        )
+        return 2
+    import os
+    from pathlib import Path
+
+    cache = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "turbocpp" / "models"
+    cache.mkdir(parents=True, exist_ok=True)
+    path = hf_hub_download(
+        repo_id=args.repo,
+        filename=args.filename,
+        cache_dir=str(cache),
+        local_dir=str(cache) if args.flat else None,
+    )
+    print(path)
+    if args.sha256:
+        import hashlib
+
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1 << 20), b""):
+                h.update(chunk)
+        actual = h.hexdigest()
+        if actual != args.sha256.lower():
+            print(f"sha256 mismatch: expected {args.sha256}, got {actual}", file=sys.stderr)
+            return 3
+        print(f"sha256 ok ({actual})", file=sys.stderr)
+    return 0
+
+
 def _cmd_llama_passthrough(args) -> int:
     """Forward to a binary in ggml-org's official llama.cpp image."""
     from .llama_docker import DEFAULT_IMAGE, LLAMA_TOOLS, run_tool
@@ -505,6 +667,17 @@ def _cmd_serve(args) -> int:
 # ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
+def _defaults_for(subcommand: str) -> dict:
+    """Pull subcommand defaults from ~/.config/turbocpp/config.toml. Empty
+    on missing file or parse error."""
+    try:
+        from .config import defaults_for
+
+        return defaults_for(subcommand)
+    except Exception:
+        return {}
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(
         prog="turbocpp",
@@ -526,14 +699,23 @@ def main(argv=None) -> int:
     pb.set_defaults(func=_cmd_bench)
 
     # generate
+    gd = _defaults_for("generate")
     pg = sub.add_parser("generate", help="run inference via llama-cpp-python")
-    pg.add_argument("-m", "--model", required=True, help="path to GGUF")
+    pg.add_argument("-m", "--model", required=True, help="path to GGUF (or alias from config)")
     pg.add_argument("-p", "--prompt", required=True)
-    pg.add_argument("-n", "--n-predict", type=int, default=128)
-    pg.add_argument("-t", "--temperature", type=float, default=0.7)
-    pg.add_argument("--top-p", type=float, default=0.95)
-    pg.add_argument("--ctx", type=int, default=2048)
-    pg.add_argument("--threads", type=int, default=0)
+    pg.add_argument("-n", "--n-predict", type=int, default=gd.get("n_predict", 128))
+    pg.add_argument("-t", "--temperature", type=float, default=gd.get("temperature", 0.7))
+    pg.add_argument("--top-p", type=float, default=gd.get("top_p", 0.95))
+    pg.add_argument("--ctx", type=int, default=gd.get("ctx", 2048))
+    pg.add_argument("--threads", type=int, default=gd.get("threads", 0))
+    pg.add_argument(
+        "--seed", type=int, default=gd.get("seed", 0), help="RNG seed (0 = random per call)"
+    )
+    pg.add_argument(
+        "--stop", action="append", default=[], help="stop sequence; repeat for multiple"
+    )
+    pg.add_argument("--grammar", help="path to a GBNF grammar file")
+    pg.add_argument("--json-schema", help="path to a JSON schema (constrains output)")
     pg.set_defaults(func=_cmd_generate)
 
     # serve
@@ -564,13 +746,20 @@ def main(argv=None) -> int:
     psp.set_defaults(func=_cmd_speculative)
 
     # chat (multi-turn REPL with auto chat template + persistent history)
+    cd = _defaults_for("chat")
     pc = sub.add_parser("chat", help="multi-turn chat REPL (auto template, persistent history)")
-    pc.add_argument("-m", "--model", required=True, help="GGUF path")
-    pc.add_argument("-s", "--system", default="", help="system prompt")
-    pc.add_argument("-n", "--n-predict", type=int, default=512)
-    pc.add_argument("-t", "--temperature", type=float, default=0.7)
-    pc.add_argument("--ctx", type=int, default=4096)
-    pc.add_argument("--threads", type=int, default=0)
+    pc.add_argument("-m", "--model", required=True, help="GGUF path (or alias from config)")
+    pc.add_argument("-s", "--system", default=cd.get("system", ""), help="system prompt")
+    pc.add_argument("-n", "--n-predict", type=int, default=cd.get("n_predict", 512))
+    pc.add_argument("-t", "--temperature", type=float, default=cd.get("temperature", 0.7))
+    pc.add_argument("--ctx", type=int, default=cd.get("ctx", 4096))
+    pc.add_argument("--threads", type=int, default=cd.get("threads", 0))
+    pc.add_argument("--seed", type=int, default=cd.get("seed", 0))
+    pc.add_argument(
+        "--stop", action="append", default=[], help="stop sequence; repeat for multiple"
+    )
+    pc.add_argument("--grammar", help="path to a GBNF grammar file")
+    pc.add_argument("--json-schema", help="path to a JSON schema (constrains output)")
     pc.add_argument(
         "--chat-format",
         default="",
@@ -583,6 +772,39 @@ def main(argv=None) -> int:
         help="don't load previous conversation from ~/.cache/turbocpp/chat-*.json",
     )
     pc.set_defaults(func=_cmd_chat)
+
+    # embed
+    pe = sub.add_parser("embed", help="compute sentence embeddings")
+    pe.add_argument("-m", "--model", required=True, help="GGUF path / alias")
+    pe.add_argument("--text", help="single sentence (else reads stdin/--input lines)")
+    pe.add_argument("-i", "--input", help="path to a text file (one sentence per line)")
+    pe.add_argument("--format", choices=("json", "jsonl", "tsv"), default="json")
+    pe.add_argument("--ctx", type=int, default=512)
+    pe.add_argument("--threads", type=int, default=0)
+    pe.set_defaults(func=_cmd_embed)
+
+    # tokenize
+    pt = sub.add_parser("tokenize", help="tokenize a prompt (count / ids / pieces)")
+    pt.add_argument("-m", "--model", required=True, help="GGUF path / alias")
+    pt.add_argument("--text", help="text to tokenize")
+    pt.add_argument("-i", "--input", help="file with text to tokenize")
+    pt.add_argument("--format", choices=("count", "ids", "pieces"), default="count")
+    pt.add_argument("--add-bos", action="store_true", help="prepend BOS token")
+    pt.add_argument("--ctx", type=int, default=512)
+    pt.add_argument("--threads", type=int, default=0)
+    pt.set_defaults(func=_cmd_tokenize)
+
+    # download
+    pdl = sub.add_parser("download", help="fetch a GGUF (or any file) from HF")
+    pdl.add_argument("repo", help="HF repo id (e.g. TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF)")
+    pdl.add_argument("filename", help="exact filename inside the repo")
+    pdl.add_argument("--sha256", help="if set, verify the downloaded file matches")
+    pdl.add_argument(
+        "--flat",
+        action="store_true",
+        help="dump straight into ~/.cache/turbocpp/models/ instead of HF's snapshot tree",
+    )
+    pdl.set_defaults(func=_cmd_download)
 
     # doctor (one-shot environment check)
     pd = sub.add_parser(
