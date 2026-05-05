@@ -94,6 +94,9 @@ def test_cli_no_args_errors():
         "embed",
         "tokenize",
         "download",
+        "list-models",
+        "list-templates",
+        "quickstart",
     ],
 )
 def test_each_subcommand_has_help(sub):
@@ -186,6 +189,97 @@ def test_run_tool_rejects_unknown():
 
     with pytest.raises(ValueError):
         run_tool("not-a-tool", [])
+
+
+# ---------------------------------------------------------------------------
+# new helpers — _msgs_to_markdown, _resolve_prompt
+# ---------------------------------------------------------------------------
+def test_msgs_to_markdown_renders_roles():
+    from turboquant.cli import _msgs_to_markdown
+
+    md = _msgs_to_markdown(
+        [
+            {"role": "system", "content": "be terse"},
+            {"role": "user", "content": "hi"},
+            {"role": "assistant", "content": "hi back"},
+        ]
+    )
+    assert "## system" in md
+    assert "## user" in md
+    assert "## assistant" in md
+    assert "be terse" in md
+    assert "hi back" in md
+
+
+def test_resolve_prompt_prefers_inline(monkeypatch):
+    from turboquant.cli import _resolve_prompt
+
+    class A:
+        prompt = "inline"
+        prompt_file = None
+
+    assert _resolve_prompt(A) == "inline"
+
+
+def test_resolve_prompt_reads_file(tmp_path):
+    from turboquant.cli import _resolve_prompt
+
+    f = tmp_path / "p.txt"
+    f.write_text("from-disk", encoding="utf-8")
+
+    class A:
+        prompt = None
+        prompt_file = str(f)
+
+    assert _resolve_prompt(A) == "from-disk"
+
+
+def test_generate_requires_some_prompt(monkeypatch):
+    """No -p, no -f, and stdin is a TTY → SystemExit."""
+    from turboquant.cli import _resolve_prompt
+
+    class A:
+        prompt = None
+        prompt_file = None
+
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    with pytest.raises(SystemExit):
+        _resolve_prompt(A)
+
+
+def test_generate_logprobs_flag_parsed():
+    from turboquant.cli import main
+
+    with pytest.raises(SystemExit) as e:
+        main(["generate", "--help"])
+    assert e.value.code == 0
+
+
+def test_serve_api_key_flag_parsed():
+    from turboquant.cli import main
+
+    with pytest.raises(SystemExit) as e:
+        main(["serve", "--help"])
+    assert e.value.code == 0
+
+
+def test_embed_normalize_flag_parsed():
+    from turboquant.cli import main
+
+    with pytest.raises(SystemExit) as e:
+        main(["embed", "--help"])
+    assert e.value.code == 0
+
+
+def test_list_models_runs_without_runtime(capsys, tmp_path, monkeypatch):
+    """list-models should not require llama-cpp-python."""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    from turboquant.cli import main
+
+    rc = main(["list-models"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "alias" in out.lower() or "no aliases" in out.lower()
 
 
 # ---------------------------------------------------------------------------

@@ -105,6 +105,51 @@ def _build_grammar(args):
     return None
 
 
+def _msgs_to_markdown(msgs: list[dict]) -> str:
+    """Render a chat history as a Markdown transcript."""
+    out: list[str] = ["# turbocpp chat transcript", ""]
+    for m in msgs:
+        role = m.get("role", "?")
+        head = {"system": "## system", "user": "## user", "assistant": "## assistant"}.get(
+            role, f"## {role}"
+        )
+        out += [head, "", m.get("content", ""), ""]
+    return "\n".join(out)
+
+
+def _open_llama(args, **overrides):
+    """Construct a llama_cpp.Llama with shared kwargs from `args`. Override
+    or extend with **overrides (e.g. embedding=True, logits_all=True).
+    Resolves model aliases via config.resolve_model."""
+    from llama_cpp import Llama  # type: ignore
+
+    from .config import resolve_model
+
+    kwargs = dict(
+        model_path=resolve_model(args.model),
+        n_ctx=getattr(args, "ctx", 2048),
+        n_threads=getattr(args, "threads", 0) or None,
+        seed=getattr(args, "seed", 0) if getattr(args, "seed", 0) != 0 else -1,
+        verbose=False,
+    )
+    kwargs.update(overrides)
+    return Llama(**kwargs)
+
+
+def _resolve_prompt(args) -> str:
+    """generate accepts --prompt, --prompt-file, or stdin. This picks
+    whichever is provided (precedence: -p > -f > stdin)."""
+    if getattr(args, "prompt", None):
+        return args.prompt
+    if getattr(args, "prompt_file", None):
+        from pathlib import Path
+
+        return Path(args.prompt_file).read_text(encoding="utf-8")
+    if not sys.stdin.isatty():
+        return sys.stdin.read()
+    raise SystemExit("error: provide -p PROMPT, -f FILE, or pipe text on stdin")
+
+
 def _cmd_generate(args) -> int:
     err = _import_llama_cpp()
     if err:
@@ -112,40 +157,60 @@ def _cmd_generate(args) -> int:
         return 2
     import time
 
-    from llama_cpp import Llama
-
-    from .config import resolve_model
-
-    llm = Llama(
-        model_path=resolve_model(args.model),
-        n_ctx=args.ctx,
-        n_threads=args.threads or None,
-        seed=args.seed if args.seed != 0 else -1,
-        verbose=False,
-    )
+    prompt = _resolve_prompt(args)
+    logits_all = bool(args.logprobs and args.logprobs > 0)
+    llm = _open_llama(args, logits_all=logits_all)
     grammar = _build_grammar(args)
     t0 = time.time()
     n = 0
-    # Stream tokens as they're generated — no buffering wait.
-    for chunk in llm(
-        args.prompt,
-        max_tokens=args.n_predict,
-        temperature=args.temperature,
-        top_p=args.top_p,
-        stop=args.stop or None,
-        grammar=grammar,
-        echo=False,
-        stream=True,
-    ):
-        piece = chunk["choices"][0]["text"]
-        sys.stdout.write(piece)
+    if args.logprobs and args.logprobs > 0:
+        # Non-streaming, since llama-cpp-python only returns logprobs in
+        # the full completion response.
+        out = llm(
+            prompt,
+            max_tokens=args.n_predict,
+            temperature=args.temperature,
+            top_p=args.top_p,
+            stop=args.stop or None,
+            grammar=grammar,
+            logprobs=args.logprobs,
+            echo=False,
+        )
+        text = out["choices"][0]["text"]
+        lp = out["choices"][0].get("logprobs") or {}
+        sys.stdout.write(text)
         sys.stdout.flush()
-        n += 1
+        n = out["usage"]["completion_tokens"]
+        if lp.get("top_logprobs"):
+            import json as _json
+
+            sys.stderr.write("\n--- top_logprobs ---\n")
+            sys.stderr.write(_json.dumps(lp["top_logprobs"], indent=2))
+            sys.stderr.write("\n")
+    else:
+        # Stream tokens as they're generated — no buffering wait.
+        for chunk in llm(
+            prompt,
+            max_tokens=args.n_predict,
+            temperature=args.temperature,
+            top_p=args.top_p,
+            stop=args.stop or None,
+            grammar=grammar,
+            echo=False,
+            stream=True,
+        ):
+            piece = chunk["choices"][0]["text"]
+            sys.stdout.write(piece)
+            sys.stdout.flush()
+            n += 1
     dt = time.time() - t0
-    print(
-        f"\n\n[{n} tokens in {dt:.2f}s -> {n / max(dt, 1e-3):.1f} tok/s]",
-        file=sys.stderr,
-    )
+    if not args.quiet:
+        print(
+            f"\n\n[{n} tokens in {dt:.2f}s -> {n / max(dt, 1e-3):.1f} tok/s]",
+            file=sys.stderr,
+        )
+    else:
+        sys.stdout.write("\n")
     return 0
 
 
@@ -202,14 +267,35 @@ def _cmd_chat(args) -> int:
             print(f"(history save failed: {e})", file=sys.stderr)
 
     print(
-        f"turbocpp chat — Ctrl-D / /quit to exit, /reset, /save PATH, /load PATH\n"
+        "turbocpp chat — slash cmds: /quit /reset /save P /load P /multi /history /system TEXT\n"
         f"history: {history_file}",
         file=sys.stderr,
     )
-    while True:
+
+    def _read_user() -> str | None:
+        """Returns next user message, or None on EOF/quit. /multi reads
+        until a line that's just `EOF` (heredoc-style)."""
         try:
-            user = input("\n› ")
+            line = input("\n› ")
         except (EOFError, KeyboardInterrupt):
+            return None
+        if line.strip() == "/multi":
+            print("  (multi-line: end with a single line saying EOF)", file=sys.stderr)
+            buf: list[str] = []
+            while True:
+                try:
+                    nxt = input("… ")
+                except (EOFError, KeyboardInterrupt):
+                    break
+                if nxt.strip() == "EOF":
+                    break
+                buf.append(nxt)
+            return "\n".join(buf)
+        return line
+
+    while True:
+        user = _read_user()
+        if user is None:
             print()
             save()
             return 0
@@ -224,9 +310,28 @@ def _cmd_chat(args) -> int:
             save()
             print("(history cleared)", file=sys.stderr)
             continue
+        if s == "/history":
+            for m in msgs:
+                role = m["role"]
+                content = m["content"]
+                tag = {"system": "[sys]", "user": "[usr]", "assistant": "[ai ]"}.get(role, role)
+                print(f"{tag} {content[:300]}{'…' if len(content) > 300 else ''}", file=sys.stderr)
+            continue
+        if s.startswith("/system "):
+            new_sys = s[len("/system ") :].strip()
+            # Replace existing system message or prepend.
+            msgs = [m for m in msgs if m.get("role") != "system"]
+            msgs.insert(0, {"role": "system", "content": new_sys})
+            save()
+            print("(system prompt updated)", file=sys.stderr)
+            continue
         if s.startswith("/save "):
-            Path(s[6:].strip()).write_text(json.dumps(msgs, indent=2), encoding="utf-8")
-            print(f"(saved to {s[6:].strip()})", file=sys.stderr)
+            target = Path(s[6:].strip())
+            if target.suffix.lower() == ".md":
+                target.write_text(_msgs_to_markdown(msgs), encoding="utf-8")
+            else:
+                target.write_text(json.dumps(msgs, indent=2), encoding="utf-8")
+            print(f"(saved to {target})", file=sys.stderr)
             continue
         if s.startswith("/load "):
             try:
@@ -480,9 +585,16 @@ def _cmd_embed(args) -> int:
         embedding=True,
         verbose=False,
     )
+
+    def _l2_normalize(v):
+        s = sum(x * x for x in v) ** 0.5
+        return [x / s for x in v] if s > 0 else v
+
     out = []
     for s in sentences:
         v = llm.create_embedding(s)["data"][0]["embedding"]
+        if args.normalize:
+            v = _l2_normalize(v)
         out.append({"text": s, "embedding": v})
 
     if args.format == "tsv":
@@ -574,6 +686,120 @@ def _cmd_download(args) -> int:
     return 0
 
 
+def _cmd_list_models(args) -> int:
+    """List GGUFs available to turbocpp: aliases from config.toml + files
+    in ~/.cache/turbocpp/models/."""
+    import os
+    from pathlib import Path
+
+    from .config import load
+
+    cfg = load()
+    aliases = cfg.get("models", {}) or {}
+    cache = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "turbocpp" / "models"
+    cache_files = sorted(cache.rglob("*.gguf")) if cache.is_dir() else []
+
+    if args.format == "json":
+        import json
+
+        print(
+            json.dumps(
+                {
+                    "aliases": aliases,
+                    "cache": [str(p) for p in cache_files],
+                },
+                indent=2,
+            )
+        )
+    else:
+        if aliases:
+            print("# aliases (from ~/.config/turbocpp/config.toml)")
+            for k, v in aliases.items():
+                print(f"  {k:<20}  {v}")
+        else:
+            print("# (no aliases configured — see SECURITY.md / config.py docstring)")
+        print()
+        if cache_files:
+            print(f"# cached GGUFs in {cache}:")
+            for p in cache_files:
+                size = p.stat().st_size / 1e9
+                print(f"  {size:5.2f} GB  {p}")
+        else:
+            print(f"# (no GGUFs in {cache} — fetch one with `turbocpp download REPO FILE`)")
+    return 0
+
+
+def _cmd_list_templates(args) -> int:
+    """Print the chat templates llama-cpp-python knows about."""
+    err = _import_llama_cpp()
+    if err:
+        print(err, file=sys.stderr)
+        return 2
+    from llama_cpp import llama_chat_format
+
+    formats = (
+        sorted(
+            getattr(
+                llama_chat_format, "LlamaChatCompletionHandlerRegistry", {}
+            )._chat_handlers.keys()
+        )
+        if hasattr(llama_chat_format, "LlamaChatCompletionHandlerRegistry")
+        else []
+    )
+    # llama-cpp-python's API for this varies; fall back to attribute probe.
+    if not formats:
+        formats = sorted(
+            n
+            for n in dir(llama_chat_format)
+            if not n.startswith("_")
+            and callable(getattr(llama_chat_format, n))
+            and n not in {"register_chat_format", "register_chat_completion_handler"}
+        )
+    for n in formats:
+        print(n)
+    return 0
+
+
+def _cmd_quickstart(args) -> int:
+    """Download a tiny known-good GGUF and run a one-shot generation, so
+    a fresh `pip install turbocpp[runtime]` can prove it works."""
+    err = _import_llama_cpp()
+    if err:
+        print(err, file=sys.stderr)
+        return 2
+    try:
+        from huggingface_hub import hf_hub_download
+    except ImportError:
+        print("needs: pip install 'huggingface_hub<2.0'", file=sys.stderr)
+        return 2
+    import os
+    from pathlib import Path
+
+    cache = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "turbocpp" / "models"
+    cache.mkdir(parents=True, exist_ok=True)
+    repo = "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF"
+    fname = "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
+    print(f"[1/2] downloading {fname} from {repo} ...", file=sys.stderr)
+    path = hf_hub_download(repo_id=repo, filename=fname, cache_dir=str(cache))
+    print(f"   → {path}", file=sys.stderr)
+
+    print("[2/2] generating sample completion ...", file=sys.stderr)
+    from llama_cpp import Llama
+
+    llm = Llama(model_path=path, n_ctx=512, verbose=False)
+    out = llm(
+        "Q: What is the capital of France?\nA:",
+        max_tokens=24,
+        temperature=0.0,
+        echo=False,
+        stop=["\n"],
+    )
+    text = out["choices"][0]["text"].strip()
+    print(f"\nmodel said: {text}\n")
+    print("✓ turbocpp + llama-cpp-python work on this host.")
+    return 0
+
+
 def _cmd_llama_passthrough(args) -> int:
     """Forward to a binary in ggml-org's official llama.cpp image."""
     from .llama_docker import DEFAULT_IMAGE, LLAMA_TOOLS, run_tool
@@ -648,10 +874,21 @@ def _cmd_serve(args) -> int:
         )
         return 2
 
-    server_settings = ServerSettings(host=args.host, port=args.port)
+    # Resolve API key from --api-key, $TURBOCPP_API_KEY, or none.
+    import os as _os
+
+    from .config import resolve_model
+
+    api_key = args.api_key or _os.environ.get("TURBOCPP_API_KEY", "")
+
+    ssettings_kwargs: dict = dict(host=args.host, port=args.port)
+    if api_key:
+        ssettings_kwargs["api_key"] = api_key
+    server_settings = ServerSettings(**ssettings_kwargs)
+
     model_settings = [
         ModelSettings(
-            model=args.model,
+            model=resolve_model(args.model),
             n_ctx=args.ctx,
             n_threads=args.threads or 0,
         )
@@ -660,6 +897,12 @@ def _cmd_serve(args) -> int:
         server_settings=server_settings,
         model_settings=model_settings,
     )
+    if api_key and not args.quiet:
+        print(
+            f"[serve] API key required: clients must send "
+            f"'Authorization: Bearer {api_key[:6]}…' (truncated)",
+            file=sys.stderr,
+        )
     uvicorn.run(app, host=args.host, port=args.port)
     return 0
 
@@ -702,7 +945,10 @@ def main(argv=None) -> int:
     gd = _defaults_for("generate")
     pg = sub.add_parser("generate", help="run inference via llama-cpp-python")
     pg.add_argument("-m", "--model", required=True, help="path to GGUF (or alias from config)")
-    pg.add_argument("-p", "--prompt", required=True)
+    pg.add_argument(
+        "-p", "--prompt", default=None, help="prompt text (else --prompt-file or stdin)"
+    )
+    pg.add_argument("-f", "--prompt-file", default=None, help="read prompt from this file")
     pg.add_argument("-n", "--n-predict", type=int, default=gd.get("n_predict", 128))
     pg.add_argument("-t", "--temperature", type=float, default=gd.get("temperature", 0.7))
     pg.add_argument("--top-p", type=float, default=gd.get("top_p", 0.95))
@@ -716,15 +962,35 @@ def main(argv=None) -> int:
     )
     pg.add_argument("--grammar", help="path to a GBNF grammar file")
     pg.add_argument("--json-schema", help="path to a JSON schema (constrains output)")
+    pg.add_argument(
+        "--logprobs",
+        type=int,
+        default=0,
+        metavar="N",
+        help="report top-N logprobs per token (disables streaming)",
+    )
+    pg.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="suppress timing stats; just print the completion text",
+    )
     pg.set_defaults(func=_cmd_generate)
 
     # serve
     ps = sub.add_parser("serve", help="OpenAI-compatible HTTP server")
-    ps.add_argument("-m", "--model", required=True, help="path to GGUF")
+    ps.add_argument("-m", "--model", required=True, help="path to GGUF (or alias)")
     ps.add_argument("--host", default="127.0.0.1")
     ps.add_argument("--port", type=int, default=8080)
     ps.add_argument("--ctx", type=int, default=4096)
     ps.add_argument("--threads", type=int, default=0)
+    ps.add_argument(
+        "--api-key",
+        default="",
+        help="require Bearer auth on every request (also reads "
+        "TURBOCPP_API_KEY env var). Empty string = no auth.",
+    )
+    ps.add_argument("-q", "--quiet", action="store_true", help="suppress startup banner")
     ps.set_defaults(func=_cmd_serve)
 
     # speculative
@@ -779,6 +1045,11 @@ def main(argv=None) -> int:
     pe.add_argument("--text", help="single sentence (else reads stdin/--input lines)")
     pe.add_argument("-i", "--input", help="path to a text file (one sentence per line)")
     pe.add_argument("--format", choices=("json", "jsonl", "tsv"), default="json")
+    pe.add_argument(
+        "--normalize",
+        action="store_true",
+        help="L2-normalize each vector (cosine-similarity-ready)",
+    )
     pe.add_argument("--ctx", type=int, default=512)
     pe.add_argument("--threads", type=int, default=0)
     pe.set_defaults(func=_cmd_embed)
@@ -815,6 +1086,19 @@ def main(argv=None) -> int:
     # info
     pi = sub.add_parser("info", help="show runtime topology (wheel, backends, GPU, …)")
     pi.set_defaults(func=_cmd_info)
+
+    # list-models
+    plm = sub.add_parser("list-models", help="list configured aliases + cached GGUFs")
+    plm.add_argument("--format", choices=("text", "json"), default="text")
+    plm.set_defaults(func=_cmd_list_models)
+
+    # list-templates
+    plt = sub.add_parser("list-templates", help="list chat templates known to llama-cpp-python")
+    plt.set_defaults(func=_cmd_list_templates)
+
+    # quickstart — zero-config "is this thing on?"
+    pq = sub.add_parser("quickstart", help="download TinyLlama + run a sample completion")
+    pq.set_defaults(func=_cmd_quickstart)
 
     # llama-cpp tool passthroughs (delegate to the official llama.cpp image)
     psp_tools = sub.add_parser(
