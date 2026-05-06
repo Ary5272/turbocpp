@@ -248,8 +248,6 @@ def _cmd_chat(args) -> int:
     import os
     from pathlib import Path
 
-    from llama_cpp import Llama
-
     from .config import resolve_model
 
     args.model = resolve_model(args.model)
@@ -269,14 +267,9 @@ def _cmd_chat(args) -> int:
     if not msgs and args.system:
         msgs.append({"role": "system", "content": args.system})
 
-    llm = Llama(
-        model_path=args.model,
-        n_ctx=args.ctx,
-        n_threads=args.threads or None,
-        chat_format=args.chat_format or None,
-        seed=args.seed if args.seed != 0 else -1,
-        verbose=False,
-    )
+    # Route through _open_llama so n_gpu_layers + future shared kwargs
+    # (e.g. n_batch, rope_freq_*) only have to be wired up in one place.
+    llm = _open_llama(args, chat_format=args.chat_format or None)
     grammar = _build_grammar(args)
 
     def save():
@@ -576,10 +569,6 @@ def _cmd_embed(args) -> int:
         return 2
     import json
 
-    from llama_cpp import Llama
-
-    from .config import resolve_model
-
     if args.input == "-" or not args.input:
         sentences = [line.rstrip("\n") for line in sys.stdin if line.strip()]
     else:
@@ -596,13 +585,7 @@ def _cmd_embed(args) -> int:
         print("nothing to embed (use --text or pipe lines on stdin)", file=sys.stderr)
         return 2
 
-    llm = Llama(
-        model_path=resolve_model(args.model),
-        n_ctx=args.ctx,
-        n_threads=args.threads or None,
-        embedding=True,
-        verbose=False,
-    )
+    llm = _open_llama(args, embedding=True)
 
     def _l2_normalize(v):
         s = sum(x * x for x in v) ** 0.5
@@ -634,9 +617,6 @@ def _cmd_tokenize(args) -> int:
     if err:
         print(err, file=sys.stderr)
         return 2
-    from llama_cpp import Llama
-
-    from .config import resolve_model
 
     if args.text:
         text = args.text
@@ -647,12 +627,7 @@ def _cmd_tokenize(args) -> int:
     else:
         text = sys.stdin.read()
 
-    llm = Llama(
-        model_path=resolve_model(args.model),
-        n_ctx=args.ctx,
-        n_threads=args.threads or None,
-        verbose=False,
-    )
+    llm = _open_llama(args)
     ids = llm.tokenize(text.encode("utf-8"), add_bos=args.add_bos)
     if args.format == "ids":
         print(" ".join(str(i) for i in ids))
