@@ -30,12 +30,15 @@ jobs:
         run: mypy turboquant --ignore-missing-imports --no-error-summary || true
 
   # ─── pure-python tests (no torch dep) ────────────────────────────────────
+  # Runs on Win + macOS + Linux because the CLI has stdin/stdout/encoding
+  # behavior that diverges by platform (e.g. cp1252 vs UTF-8 stdout).
   cli-tests:
     needs: lint
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
         python: ["3.10", "3.11", "3.12"]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
