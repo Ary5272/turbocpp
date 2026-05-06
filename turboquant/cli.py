@@ -893,13 +893,16 @@ def _cmd_serve(args) -> int:
         ssettings_kwargs["api_key"] = api_key
     server_settings = ServerSettings(**ssettings_kwargs)
 
-    model_settings = [
-        ModelSettings(
-            model=resolve_model(args.model),
-            n_ctx=args.ctx,
-            n_threads=args.threads or 0,
-        )
-    ]
+    ms_kwargs: dict = dict(
+        model=resolve_model(args.model),
+        n_ctx=args.ctx,
+        n_threads=args.threads or 0,
+    )
+    # GPU offload: --n-gpu-layers / -ngl
+    ngl = getattr(args, "n_gpu_layers", 0)
+    if ngl:
+        ms_kwargs["n_gpu_layers"] = ngl
+    model_settings = [ModelSettings(**ms_kwargs)]
     app = create_app(
         server_settings=server_settings,
         model_settings=model_settings,
