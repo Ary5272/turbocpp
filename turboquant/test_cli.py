@@ -482,3 +482,51 @@ def test_generate_jsonl_format_flag_parsed():
     with pytest.raises(SystemExit):
         # missing -m → SystemExit, but argparse must accept --format jsonl
         main(["generate", "-p", "hi", "--format", "jsonl"])
+
+
+def test_top_level_help_is_ascii():
+    """Top-level `--help` must be pure ASCII so it never crashes on
+    Windows cp1252 / POSIX C locale stdout. Subparser help strings live
+    here too — keep them clean."""
+    import argparse
+
+    from turboquant.cli import main  # noqa: F401  (forces parser construction below)
+
+    # Re-build the same parser to inspect formatted help text:
+    sys.argv_backup = sys.argv
+    try:
+        # `main` builds + parses; we only need the formatted help string.
+        # Use a separate run that captures `--help` via SystemExit.
+        from io import StringIO
+
+        buf = StringIO()
+        old_stdout = sys.stdout
+        sys.stdout = buf
+        try:
+            try:
+                main(["--help"])
+            except SystemExit:
+                pass
+        finally:
+            sys.stdout = old_stdout
+        text = buf.getvalue()
+    finally:
+        sys.argv = sys.argv_backup
+
+    assert text, "--help produced no output"
+    non_ascii = [(i, ch) for i, ch in enumerate(text) if ord(ch) > 127]
+    assert not non_ascii, (
+        f"top-level --help contains non-ASCII chars: {non_ascii[:5]} "
+        f"(would crash Windows cp1252 stdout)"
+    )
+    # Sanity: argparse's `argparse` import is satisfied
+    assert argparse
+
+
+def test_ensure_utf8_stdio_is_idempotent():
+    """`_ensure_utf8_stdio` must be a no-op safe-to-call-twice and must
+    not raise when stdout doesn't support reconfigure (e.g. capsys)."""
+    from turboquant.cli import _ensure_utf8_stdio
+
+    _ensure_utf8_stdio()
+    _ensure_utf8_stdio()  # second call must also succeed

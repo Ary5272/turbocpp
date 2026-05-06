@@ -953,12 +953,25 @@ def _defaults_for(subcommand: str) -> dict:
         return {}
 
 
+def _ensure_utf8_stdio() -> None:
+    """Force stdout/stderr to UTF-8 on Windows. Default `cp1252` blows up on
+    non-ASCII chars in argparse help (e.g. the em-dash in our description),
+    crashing `turbocpp --help` before the user sees anything. PEP 540
+    `PYTHONUTF8=1` would fix it too, but most users won't set it."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")  # py3.7+
+        except (AttributeError, OSError):
+            pass
+
+
 def main(argv=None) -> int:
+    _ensure_utf8_stdio()
     from . import __version__
 
     p = argparse.ArgumentParser(
         prog="turbocpp",
-        description="llama.cpp + TurboQuant — unified CLI",
+        description="llama.cpp + TurboQuant - unified CLI",
     )
     p.add_argument("-V", "--version", action="version", version=f"turbocpp {__version__}")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -968,7 +981,9 @@ def main(argv=None) -> int:
     pr.add_argument("model_dir", type=Path, help="HF model directory")
     pr.add_argument("out_dir", type=Path, help="output directory")
     pr.add_argument("--block", type=int, default=128, help="Hadamard block size (power of 2)")
-    pr.add_argument("--no-fuse", action="store_true", help="skip RMSNorm γ → linear fusion (debug)")
+    pr.add_argument(
+        "--no-fuse", action="store_true", help="skip RMSNorm gamma -> linear fusion (debug)"
+    )
     pr.set_defaults(func=_cmd_rotate)
 
     # bench
@@ -1155,12 +1170,12 @@ def main(argv=None) -> int:
 
     # doctor (one-shot environment check)
     pd = sub.add_parser(
-        "doctor", help="check turbocpp install health (deps, wheels, docker, GPU, …)"
+        "doctor", help="check turbocpp install health (deps, wheels, docker, GPU, ...)"
     )
     pd.set_defaults(func=_cmd_doctor)
 
     # info
-    pi = sub.add_parser("info", help="show runtime topology (wheel, backends, GPU, …)")
+    pi = sub.add_parser("info", help="show runtime topology (wheel, backends, GPU, ...)")
     pi.set_defaults(func=_cmd_info)
 
     # version
@@ -1225,8 +1240,8 @@ def main(argv=None) -> int:
 
     # convenience aliases for the most-used tools
     for alias, tool, h in (
-        ("convert", "convert_hf_to_gguf.py", "HF model → GGUF (delegates to llama.cpp image)"),
-        ("quantize", "llama-quantize", "GGUF → quantized GGUF"),
+        ("convert", "convert_hf_to_gguf.py", "HF model -> GGUF (delegates to llama.cpp image)"),
+        ("quantize", "llama-quantize", "GGUF -> quantized GGUF"),
         ("perplexity", "llama-perplexity", "compute perplexity on a corpus"),
         ("imatrix", "llama-imatrix", "build an importance matrix for K-quants"),
         ("llama-cli", "llama-cli", "raw llama-cli passthrough"),
