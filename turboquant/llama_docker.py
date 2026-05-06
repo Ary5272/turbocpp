@@ -30,7 +30,7 @@ import shlex
 import shutil
 import subprocess
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping, MutableMapping, Sequence
 
 DEFAULT_IMAGE = "ghcr.io/ggml-org/llama.cpp:full"
 
@@ -105,11 +105,11 @@ def run_tool(
         if pull_image(image) != 0:
             return 1
 
-    if mounts is None:
-        mounts = {}
-    # Default model mount
-    if "/models" not in mounts.values() and "MODELS_DIR" in os.environ:
-        mounts[os.environ["MODELS_DIR"]] = "/models"
+    # Make a mutable copy so we can add the default $MODELS_DIR mount.
+    mounts_mut: MutableMapping[str, str] = dict(mounts) if mounts else {}
+    if "/models" not in mounts_mut.values() and "MODELS_DIR" in os.environ:
+        mounts_mut[os.environ["MODELS_DIR"]] = "/models"
+    mounts = mounts_mut
 
     cmd: list[str] = ["docker", "run", "--rm"]
     if interactive:

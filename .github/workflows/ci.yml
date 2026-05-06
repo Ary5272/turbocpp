@@ -26,8 +26,8 @@ jobs:
         run: ruff check turboquant scripts
       - name: ruff format check
         run: ruff format --check turboquant scripts
-      - name: mypy (loose, info-only)
-        run: mypy turboquant --ignore-missing-imports --no-error-summary || true
+      - name: mypy
+        run: mypy turboquant --ignore-missing-imports
 
   # ─── pure-python tests (no torch dep) ────────────────────────────────────
   # Runs on Win + macOS + Linux because the CLI has stdin/stdout/encoding

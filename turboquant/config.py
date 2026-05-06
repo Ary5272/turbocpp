@@ -83,7 +83,7 @@ def resolve_model(name: str) -> str:
         return os.path.expandvars(os.path.expanduser(str(cfg[name])))
 
     repo, filename = _parse_hf_ref(name)
-    if repo is not None:
+    if repo is not None and filename is not None:
         return _ensure_hf_cached(repo, filename)
     return name
 

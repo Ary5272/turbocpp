@@ -730,15 +730,9 @@ def _cmd_list_templates(args) -> int:
         return 2
     from llama_cpp import llama_chat_format
 
-    formats = (
-        sorted(
-            getattr(
-                llama_chat_format, "LlamaChatCompletionHandlerRegistry", {}
-            )._chat_handlers.keys()
-        )
-        if hasattr(llama_chat_format, "LlamaChatCompletionHandlerRegistry")
-        else []
-    )
+    registry = getattr(llama_chat_format, "LlamaChatCompletionHandlerRegistry", None)
+    handlers = getattr(registry, "_chat_handlers", None) if registry is not None else None
+    formats = sorted(handlers.keys()) if handlers else []
     # llama-cpp-python's API for this varies; fall back to attribute probe.
     if not formats:
         formats = sorted(
@@ -786,7 +780,10 @@ def _cmd_quickstart(args) -> int:
         temperature=0.0,
         echo=False,
         stop=["\n"],
+        stream=False,
     )
+    # stream=False guarantees a Mapping rather than an iterator.
+    assert isinstance(out, dict), f"expected dict, got {type(out)}"
     text = out["choices"][0]["text"].strip()
     print(f"\nmodel said: {text}\n")
     print("✓ turbocpp + llama-cpp-python work on this host.")
@@ -938,7 +935,7 @@ def _ensure_utf8_stdio() -> None:
     `PYTHONUTF8=1` would fix it too, but most users won't set it."""
     for stream in (sys.stdout, sys.stderr):
         try:
-            stream.reconfigure(encoding="utf-8", errors="replace")  # py3.7+
+            stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
         except (AttributeError, OSError):
             pass
 
