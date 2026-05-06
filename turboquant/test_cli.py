@@ -427,27 +427,31 @@ def test_runtime_probe_keys_are_stable():
 
 
 def test_open_llama_passes_n_gpu_layers(monkeypatch):
-    """_open_llama should forward --n-gpu-layers when set, omit when 0."""
+    """_open_llama should forward --n-gpu-layers when set, omit when 0.
+
+    Works whether or not llama_cpp is actually installed: we install a
+    fake module into sys.modules before _open_llama's deferred import."""
+    import sys
+    import types
+
     captured = {}
 
     class FakeLlama:
         def __init__(self, **kw):
             captured.update(kw)
 
-    monkeypatch.setattr(
-        "llama_cpp.Llama",
-        FakeLlama,
-        raising=False,
-    )
+    fake_mod = types.ModuleType("llama_cpp")
+    fake_mod.Llama = FakeLlama  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "llama_cpp", fake_mod)
 
     # Stub `from .config import resolve_model` to a passthrough.
     import turboquant.config as _cfg
 
     monkeypatch.setattr(_cfg, "resolve_model", lambda x: x)
 
-    # --- skip case (ngl=0)
     from turboquant.cli import _open_llama
 
+    # --- skip case (ngl=0)
     class A0:
         model = "x.gguf"
         ctx = 512
@@ -455,10 +459,7 @@ def test_open_llama_passes_n_gpu_layers(monkeypatch):
         seed = 0
         n_gpu_layers = 0
 
-    try:
-        _open_llama(A0)
-    except Exception:
-        pass
+    _open_llama(A0)
     assert "n_gpu_layers" not in captured
 
     captured.clear()
@@ -471,10 +472,7 @@ def test_open_llama_passes_n_gpu_layers(monkeypatch):
         seed = 0
         n_gpu_layers = 99
 
-    try:
-        _open_llama(A1)
-    except Exception:
-        pass
+    _open_llama(A1)
     assert captured.get("n_gpu_layers") == 99
 
 
