@@ -1,5 +1,13 @@
 # turbocpp
 
+[![PyPI](https://img.shields.io/pypi/v/turbocpp?label=pypi)](https://pypi.org/project/turbocpp/)
+[![Python](https://img.shields.io/pypi/pyversions/turbocpp.svg)](https://pypi.org/project/turbocpp/)
+[![CI](https://github.com/Ary5272/turbocpp/actions/workflows/ci.yml/badge.svg)](https://github.com/Ary5272/turbocpp/actions/workflows/ci.yml)
+[![Docker](https://github.com/Ary5272/turbocpp/actions/workflows/docker.yml/badge.svg)](https://github.com/Ary5272/turbocpp/actions/workflows/docker.yml)
+[![security](https://github.com/Ary5272/turbocpp/actions/workflows/security.yml/badge.svg)](https://github.com/Ary5272/turbocpp/actions/workflows/security.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![SLSA](https://img.shields.io/badge/SLSA-build%20provenance-blue)](https://slsa.dev/)
+
 > **llama.cpp + TurboQuant.** Every llama.cpp feature, plus an offline
 > Hadamard-rotation preprocessor that meaningfully improves the quality
 > of any quantization (Q4_0 / Q4_K_M / Q6_K / …) at zero inference cost.

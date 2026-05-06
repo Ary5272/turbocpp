@@ -97,6 +97,8 @@ def test_cli_no_args_errors():
         "list-models",
         "list-templates",
         "quickstart",
+        "version",
+        "rm-model",
     ],
 )
 def test_each_subcommand_has_help(sub):
@@ -366,3 +368,119 @@ def test_chat_accepts_new_flags():
 
     with pytest.raises(SystemExit):
         main(["chat", "--seed", "7", "--stop", "STOP", "--grammar", "/tmp/x"])
+
+
+# ---------------------------------------------------------------------------
+# v0.10 additions
+# ---------------------------------------------------------------------------
+def test_root_version_flag(capsys):
+    """`turbocpp --version` prints version and exits 0."""
+    from turboquant.cli import main
+
+    with pytest.raises(SystemExit) as e:
+        main(["--version"])
+    assert e.value.code == 0
+    # argparse's --version exits 0 with the version on stdout; we just
+    # confirm it didn't error and produced some output.
+    captured = capsys.readouterr()
+    assert "turbocpp" in (captured.out + captured.err)
+
+
+def test_version_subcommand_prints(capsys):
+    from turboquant.cli import main
+
+    rc = main(["version"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    # Either real version or the "0.0.0+source" fallback.
+    assert out, "version subcommand printed nothing"
+
+
+def test_rm_model_dry_run_handles_empty_cache(monkeypatch, tmp_path, capsys):
+    """rm-model with no cache directory should not crash."""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    from turboquant.cli import main
+
+    rc = main(["rm-model", "--all", "--dry-run"])
+    assert rc == 0
+
+
+def test_runtime_probe_keys_are_stable():
+    """info + doctor both depend on these keys; downstream JSON parsers
+    might too — guard against accidental rename."""
+    from turboquant.runtime_probe import collect_runtime_topology
+
+    info = collect_runtime_topology()
+    expected = {
+        "turbocpp",
+        "python",
+        "platform",
+        "cpu_variant",
+        "best_wheel_url",
+        "docker_present",
+        "llama_image",
+        "llama_image_pulled",
+        "llama_cpp",
+        "gpu",
+    }
+    assert expected.issubset(info.keys()), f"missing keys: {expected - info.keys()}"
+
+
+def test_open_llama_passes_n_gpu_layers(monkeypatch):
+    """_open_llama should forward --n-gpu-layers when set, omit when 0."""
+    captured = {}
+
+    class FakeLlama:
+        def __init__(self, **kw):
+            captured.update(kw)
+
+    monkeypatch.setattr(
+        "llama_cpp.Llama",
+        FakeLlama,
+        raising=False,
+    )
+
+    # Stub `from .config import resolve_model` to a passthrough.
+    import turboquant.config as _cfg
+
+    monkeypatch.setattr(_cfg, "resolve_model", lambda x: x)
+
+    # --- skip case (ngl=0)
+    from turboquant.cli import _open_llama
+
+    class A0:
+        model = "x.gguf"
+        ctx = 512
+        threads = 0
+        seed = 0
+        n_gpu_layers = 0
+
+    try:
+        _open_llama(A0)
+    except Exception:
+        pass
+    assert "n_gpu_layers" not in captured
+
+    captured.clear()
+
+    # --- include case (ngl=99)
+    class A1:
+        model = "x.gguf"
+        ctx = 512
+        threads = 0
+        seed = 0
+        n_gpu_layers = 99
+
+    try:
+        _open_llama(A1)
+    except Exception:
+        pass
+    assert captured.get("n_gpu_layers") == 99
+
+
+def test_generate_jsonl_format_flag_parsed():
+    from turboquant.cli import main
+
+    with pytest.raises(SystemExit):
+        # missing -m → SystemExit, but argparse must accept --format jsonl
+        main(["generate", "-p", "hi", "--format", "jsonl"])

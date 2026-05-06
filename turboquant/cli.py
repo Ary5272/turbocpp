@@ -132,6 +132,10 @@ def _open_llama(args, **overrides):
         seed=getattr(args, "seed", 0) if getattr(args, "seed", 0) != 0 else -1,
         verbose=False,
     )
+    # GPU offload: -ngl N. -1 means "all layers", 0 = CPU only (default).
+    ngl = getattr(args, "n_gpu_layers", 0)
+    if ngl:
+        kwargs["n_gpu_layers"] = ngl
     kwargs.update(overrides)
     return Llama(**kwargs)
 
@@ -189,6 +193,9 @@ def _cmd_generate(args) -> int:
             sys.stderr.write("\n")
     else:
         # Stream tokens as they're generated — no buffering wait.
+        import json as _json
+
+        jsonl = getattr(args, "format", "text") == "jsonl"
         for chunk in llm(
             prompt,
             max_tokens=args.n_predict,
@@ -200,7 +207,19 @@ def _cmd_generate(args) -> int:
             stream=True,
         ):
             piece = chunk["choices"][0]["text"]
-            sys.stdout.write(piece)
+            if jsonl:
+                sys.stdout.write(
+                    _json.dumps(
+                        {
+                            "token": piece,
+                            "index": n,
+                            "finish_reason": chunk["choices"][0].get("finish_reason"),
+                        }
+                    )
+                    + "\n"
+                )
+            else:
+                sys.stdout.write(piece)
             sys.stdout.flush()
             n += 1
     dt = time.time() - t0
@@ -364,15 +383,15 @@ def _cmd_chat(args) -> int:
 
 def _cmd_doctor(args) -> int:
     """Walk a checklist and print PASS / WARN / FAIL for each item.
-    Exit code = number of FAILs."""
+    Exit code = number of FAILs. Shares its data source with `info` so
+    they're always consistent."""
     import shutil
     import sys
     import urllib.request
 
-    from . import __version__
-    from .cpu_features import best_wheel_url, detect_variant
-    from .llama_docker import DEFAULT_IMAGE, docker_available, image_present
+    from .runtime_probe import collect_runtime_topology
 
+    info = collect_runtime_topology()
     fails = 0
 
     def row(status, label, detail=""):
@@ -386,46 +405,39 @@ def _cmd_doctor(args) -> int:
         }.get(status, status)
         print(f"  [{col}]  {label:<38} {detail}")
 
-    print(f"turbocpp {__version__} doctor — {sys.platform}")
+    print(f"turbocpp {info['turbocpp']} doctor — {sys.platform}")
 
-    # Python version
     py = sys.version_info
-    if py >= (3, 10):
-        row("PASS", "python ≥ 3.10", f"{py.major}.{py.minor}.{py.micro}")
-    else:
-        row("FAIL", "python ≥ 3.10", f"{py.major}.{py.minor}.{py.micro}")
+    row(
+        "PASS" if py >= (3, 10) else "FAIL",
+        "python ≥ 3.10",
+        f"{py.major}.{py.minor}.{py.micro}",
+    )
 
-    # CPU variant
-    v = detect_variant()
+    v = info["cpu_variant"]
     row("PASS" if "avx2" in v or "avx512" in v else "WARN", "cpu feature variant", v)
 
-    # llama-cpp-python
-    try:
-        import llama_cpp
-
-        ver = getattr(llama_cpp, "__version__", "?")
-        row("PASS", "llama-cpp-python", ver)
-        try:
-            from llama_cpp import llama_supports_gpu_offload
-
-            gpu = bool(llama_supports_gpu_offload())
-            row(
-                "PASS" if gpu else "WARN",
-                "llama-cpp-python GPU offload",
-                "yes" if gpu else "CPU-only build",
-            )
-        except Exception:
-            row("WARN", "llama-cpp-python GPU offload", "couldn't probe")
-    except ImportError:
+    lcpp = info["llama_cpp"]
+    if lcpp.get("installed"):
+        row("PASS", "llama-cpp-python", lcpp.get("version", "?"))
+        gpu = lcpp.get("gpu_offload")
+        row(
+            "PASS" if gpu else "WARN",
+            "llama-cpp-python GPU offload",
+            "yes" if gpu else "CPU-only build" if gpu is False else "couldn't probe",
+        )
+    else:
         row("WARN", "llama-cpp-python", "not installed — `pip install turbocpp[runtime]`")
 
-    # Docker (only required for the llama-* passthroughs)
-    if docker_available():
+    if info["docker_present"]:
         row("PASS", "docker on PATH", shutil.which("docker") or "")
-        if image_present(DEFAULT_IMAGE):
-            row("PASS", f"image {DEFAULT_IMAGE}", "cached locally")
-        else:
-            row("WARN", f"image {DEFAULT_IMAGE}", "not pulled yet (auto on first use)")
+        row(
+            "PASS" if info["llama_image_pulled"] else "WARN",
+            f"image {info['llama_image']}",
+            "cached locally"
+            if info["llama_image_pulled"]
+            else "not pulled yet (auto on first use)",
+        )
     else:
         row(
             "WARN",
@@ -433,24 +445,12 @@ def _cmd_doctor(args) -> int:
             "missing — `turbocpp llama …` / convert / quantize unavailable",
         )
 
-    # GPU
-    if shutil.which("nvidia-smi"):
-        row("PASS", "GPU", "nvidia (nvidia-smi)")
-    elif shutil.which("rocminfo"):
-        row("PASS", "GPU", "amd (rocminfo)")
-    elif sys.platform == "darwin":
-        import platform as _p
+    g = info["gpu"]
+    row("PASS" if g else "WARN", "GPU", g or "none detected (CPU-only)")
 
-        if _p.machine() == "arm64":
-            row("PASS", "GPU", "apple silicon (Metal)")
-        else:
-            row("WARN", "GPU", "intel mac — no GPU offload")
-    else:
-        row("WARN", "GPU", "none detected (CPU-only)")
-
-    # HF wheel mirror reachability
+    # HF wheel mirror reachability — kept in doctor only since it costs network.
     try:
-        url = best_wheel_url()
+        url = info["best_wheel_url"]
         urllib.request.urlopen(urllib.request.Request(url, method="HEAD"), timeout=5).close()
         row("PASS", "HF wheel URL reachable", url[:60] + "…")
     except Exception as e:
@@ -461,44 +461,62 @@ def _cmd_doctor(args) -> int:
 
 
 def _cmd_info(args) -> int:
-    """Print the runtime topology: which wheel, which backends are
-    compiled in, llama.cpp image tag, model paths, etc."""
+    """Print the runtime topology as JSON. Single source of truth lives
+    in runtime_probe.collect_runtime_topology() so info and doctor agree."""
     import json
-    import platform
-    import shutil
 
+    from .runtime_probe import collect_runtime_topology
+
+    print(json.dumps(collect_runtime_topology(), indent=2))
+    return 0
+
+
+def _cmd_version(args) -> int:
+    """Print just the version (matches `turbocpp --version`)."""
     from . import __version__
-    from .cpu_features import best_wheel_url, detect_variant
-    from .llama_docker import DEFAULT_IMAGE, docker_available, image_present
 
-    info = {
-        "turbocpp": __version__,
-        "python": platform.python_version(),
-        "platform": f"{platform.system()} {platform.release()} {platform.machine()}",
-        "cpu_variant": detect_variant(),
-        "best_wheel_url": best_wheel_url(),
-        "docker_present": docker_available(),
-        "llama_image": DEFAULT_IMAGE,
-        "llama_image_pulled": image_present(DEFAULT_IMAGE) if docker_available() else False,
-    }
-    try:
-        import llama_cpp  # noqa: F401
+    print(__version__)
+    return 0
 
-        info["llama_cpp_python"] = getattr(llama_cpp, "__version__", "?")
-        from llama_cpp import llama_supports_gpu_offload  # type: ignore
 
-        info["llama_gpu_offload"] = bool(llama_supports_gpu_offload())
-    except ImportError:
-        info["llama_cpp_python"] = None
-    if shutil.which("nvidia-smi"):
-        info["gpu"] = "nvidia (nvidia-smi present)"
-    elif shutil.which("rocminfo"):
-        info["gpu"] = "amd (rocminfo present)"
-    elif platform.system() == "Darwin" and platform.machine() == "arm64":
-        info["gpu"] = "apple silicon (Metal available)"
+def _cmd_rm_model(args) -> int:
+    """Delete cached GGUFs in ~/.cache/turbocpp/models/. With --all wipes
+    the whole cache; otherwise pass exact filename(s)."""
+    import os
+    from pathlib import Path
+
+    cache = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "turbocpp" / "models"
+    if not cache.is_dir():
+        print("(no cache directory)", file=sys.stderr)
+        return 0
+
+    if args.all:
+        files = list(cache.rglob("*.gguf"))
     else:
-        info["gpu"] = None
-    print(json.dumps(info, indent=2))
+        if not args.names:
+            print("error: pass filenames to delete or --all", file=sys.stderr)
+            return 2
+        files = []
+        for n in args.names:
+            files += list(cache.rglob(n))
+        if not files:
+            print(f"no match for {args.names}", file=sys.stderr)
+            return 1
+
+    if args.dry_run:
+        for p in files:
+            print(p)
+        return 0
+    freed = 0
+    for p in files:
+        try:
+            sz = p.stat().st_size
+            p.unlink()
+            freed += sz
+            print(f"rm {p}", file=sys.stderr)
+        except OSError as e:
+            print(f"failed to delete {p}: {e}", file=sys.stderr)
+    print(f"freed {freed / 1e9:.2f} GB", file=sys.stderr)
     return 0
 
 
@@ -809,6 +827,20 @@ def _cmd_llama_passthrough(args) -> int:
         print(f"unknown tool {tool!r}; choose from {LLAMA_TOOLS}", file=sys.stderr)
         return 2
 
+    # Default Q4_K_M when `turbocpp quantize IN OUT` is called with only
+    # the two GGUF paths (the third positional is normally the quant type).
+    if tool == "llama-quantize":
+        rest = list(args.rest or [])
+        if rest and rest[0] == "--":
+            rest = rest[1:]
+        # Heuristic: if exactly two non-flag positionals and no -f/-o/etc,
+        # llama-quantize would refuse — append the default type.
+        non_flag = [r for r in rest if not r.startswith("-")]
+        looks_bare = len(non_flag) == 2 and len(rest) == 2
+        if looks_bare:
+            args.rest = rest + ["Q4_K_M"]
+            print("[turbocpp] no quant type given, defaulting to Q4_K_M", file=sys.stderr)
+
     mounts = {}
     for spec in args.mount:
         if ":" not in spec:
@@ -922,10 +954,13 @@ def _defaults_for(subcommand: str) -> dict:
 
 
 def main(argv=None) -> int:
+    from . import __version__
+
     p = argparse.ArgumentParser(
         prog="turbocpp",
         description="llama.cpp + TurboQuant — unified CLI",
     )
+    p.add_argument("-V", "--version", action="version", version=f"turbocpp {__version__}")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     # rotate
@@ -975,6 +1010,22 @@ def main(argv=None) -> int:
         action="store_true",
         help="suppress timing stats; just print the completion text",
     )
+    pg.add_argument(
+        "-ngl",
+        "--n-gpu-layers",
+        type=int,
+        default=0,
+        metavar="N",
+        help="offload N transformer layers to GPU (-1 = all). Requires a "
+        "GPU-built llama-cpp-python wheel.",
+    )
+    pg.add_argument(
+        "--format",
+        choices=("text", "jsonl"),
+        default="text",
+        help="output format: 'text' streams raw tokens, 'jsonl' emits one "
+        "JSON line per token (good for piping into jq).",
+    )
     pg.set_defaults(func=_cmd_generate)
 
     # serve
@@ -991,6 +1042,15 @@ def main(argv=None) -> int:
         "TURBOCPP_API_KEY env var). Empty string = no auth.",
     )
     ps.add_argument("-q", "--quiet", action="store_true", help="suppress startup banner")
+    ps.add_argument(
+        "-ngl",
+        "--n-gpu-layers",
+        type=int,
+        default=0,
+        metavar="N",
+        help="offload N transformer layers to GPU (-1 = all). Requires a "
+        "GPU-built llama-cpp-python wheel.",
+    )
     ps.set_defaults(func=_cmd_serve)
 
     # speculative
@@ -1037,6 +1097,14 @@ def main(argv=None) -> int:
         action="store_true",
         help="don't load previous conversation from ~/.cache/turbocpp/chat-*.json",
     )
+    pc.add_argument(
+        "-ngl",
+        "--n-gpu-layers",
+        type=int,
+        default=0,
+        metavar="N",
+        help="offload N transformer layers to GPU (-1 = all)",
+    )
     pc.set_defaults(func=_cmd_chat)
 
     # embed
@@ -1052,6 +1120,14 @@ def main(argv=None) -> int:
     )
     pe.add_argument("--ctx", type=int, default=512)
     pe.add_argument("--threads", type=int, default=0)
+    pe.add_argument(
+        "-ngl",
+        "--n-gpu-layers",
+        type=int,
+        default=0,
+        metavar="N",
+        help="offload N transformer layers to GPU",
+    )
     pe.set_defaults(func=_cmd_embed)
 
     # tokenize
@@ -1086,6 +1162,22 @@ def main(argv=None) -> int:
     # info
     pi = sub.add_parser("info", help="show runtime topology (wheel, backends, GPU, …)")
     pi.set_defaults(func=_cmd_info)
+
+    # version
+    pv = sub.add_parser("version", help="print just the package version")
+    pv.set_defaults(func=_cmd_version)
+
+    # rm-model
+    prm = sub.add_parser(
+        "rm-model",
+        help="delete cached GGUFs in ~/.cache/turbocpp/models/",
+    )
+    prm.add_argument("names", nargs="*", help="exact filenames to delete (glob ok)")
+    prm.add_argument("--all", action="store_true", help="wipe every cached GGUF")
+    prm.add_argument(
+        "--dry-run", action="store_true", help="print paths that would be deleted, don't delete"
+    )
+    prm.set_defaults(func=_cmd_rm_model)
 
     # list-models
     plm = sub.add_parser("list-models", help="list configured aliases + cached GGUFs")
