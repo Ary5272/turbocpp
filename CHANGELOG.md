@@ -6,6 +6,10 @@ from `git tag` + commit subjects (see `scripts/gen_changelog.sh`).
 
 ## [Unreleased]
 
+## [v0.10.0] - 2026-05-06
+
+runtime_probe, version+rm-model, --n-gpu-layers, JSONL, default Q4_K_M, badges, CHANGELOG
+
 ## [v0.9.0] - 2026-05-05
 
 better generate/chat/embed/serve, list-models/templates, quickstart
