@@ -67,9 +67,60 @@ def defaults_for(subcommand: str) -> dict[str, Any]:
 
 
 def resolve_model(name: str) -> str:
-    """If `name` matches a key under `[models]`, return the resolved GGUF
-    path (with ~/$VAR expansion). Otherwise return `name` untouched."""
+    """Resolve a model identifier to a local GGUF path.
+
+    Resolution order:
+    1. Alias match in `[models]` table (with ~/$VAR expansion).
+    2. `hf://owner/repo/path/to/file.gguf` or `owner/repo:filename.gguf` —
+       fetch from HuggingFace Hub into ~/.cache/turbocpp/models/ if not
+       already cached. Requires `huggingface_hub` to be installed.
+    3. Otherwise, return `name` untouched (treated as a local path).
+
+    Raises FileNotFoundError if HF download is requested but the package
+    isn't installed."""
     cfg = load().get("models", {})
     if name in cfg:
         return os.path.expandvars(os.path.expanduser(str(cfg[name])))
+
+    repo, filename = _parse_hf_ref(name)
+    if repo is not None:
+        return _ensure_hf_cached(repo, filename)
     return name
+
+
+def _parse_hf_ref(name: str) -> tuple[str | None, str | None]:
+    """Recognize HF references. Returns (repo_id, filename) or (None, None).
+
+    Forms accepted:
+        hf://owner/repo/path/to/file.gguf       -> ("owner/repo", "path/to/file.gguf")
+        owner/repo:filename.gguf                -> ("owner/repo", "filename.gguf")
+    A bare local path like ``./model.gguf`` or ``C:\\models\\m.gguf`` is
+    rejected (returns (None, None))."""
+    if name.startswith("hf://"):
+        rest = name[len("hf://") :]
+        parts = rest.split("/", 2)
+        if len(parts) < 3:
+            return (None, None)
+        return (f"{parts[0]}/{parts[1]}", parts[2])
+    if ":" in name:
+        # `owner/repo:filename.gguf` form. Reject Windows drive letters
+        # (`C:\models\m.gguf` has no slash before the colon) and POSIX
+        # absolute paths with a stray colon (filename must end with .gguf).
+        repo, _, filename = name.partition(":")
+        if repo.count("/") == 1 and filename.endswith(".gguf"):
+            return (repo, filename)
+    return (None, None)
+
+
+def _ensure_hf_cached(repo: str, filename: str) -> str:
+    """Download from HF Hub into ~/.cache/turbocpp/models/ if not cached."""
+    try:
+        from huggingface_hub import hf_hub_download
+    except ImportError as e:
+        raise FileNotFoundError(
+            f"cannot resolve {repo}:{filename}: huggingface_hub not installed. "
+            f"run: pip install 'huggingface_hub<2.0'"
+        ) from e
+    cache = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "turbocpp" / "models"
+    cache.mkdir(parents=True, exist_ok=True)
+    return hf_hub_download(repo_id=repo, filename=filename, cache_dir=str(cache))

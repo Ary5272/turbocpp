@@ -530,3 +530,77 @@ def test_ensure_utf8_stdio_is_idempotent():
 
     _ensure_utf8_stdio()
     _ensure_utf8_stdio()  # second call must also succeed
+
+
+# ---------------------------------------------------------------------------
+# config.resolve_model HF reference parsing
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize(
+    "ref,expected",
+    [
+        # hf:// scheme
+        (
+            "hf://TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-Q4_K_M.gguf",
+            ("TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF", "tinyllama-Q4_K_M.gguf"),
+        ),
+        (
+            "hf://owner/repo/sub/dir/m.gguf",
+            ("owner/repo", "sub/dir/m.gguf"),
+        ),
+        # owner/repo:filename form
+        (
+            "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF:tinyllama-Q4_K_M.gguf",
+            ("TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF", "tinyllama-Q4_K_M.gguf"),
+        ),
+        # local paths must NOT be parsed as HF refs
+        ("./model.gguf", (None, None)),
+        ("/abs/path/model.gguf", (None, None)),
+        ("C:\\models\\m.gguf", (None, None)),  # Windows drive letter
+        ("model.gguf", (None, None)),
+        ("just/a/path.gguf", (None, None)),  # 2 slashes, no colon
+        # malformed hf:// refs are ignored (caller's path-not-found will fire)
+        ("hf://owner/repo", (None, None)),  # missing filename
+        ("hf://justone", (None, None)),
+        # owner/repo: with non-gguf filename = treat as local path
+        ("owner/repo:something.txt", (None, None)),
+    ],
+)
+def test_parse_hf_ref(ref, expected):
+    from turboquant.config import _parse_hf_ref
+
+    assert _parse_hf_ref(ref) == expected
+
+
+def test_resolve_model_local_paths_passthrough():
+    """resolve_model returns local paths untouched (no alias, no HF ref)."""
+    from turboquant.config import resolve_model
+
+    for s in ("./model.gguf", "/abs/m.gguf", "C:\\m.gguf", "plain.gguf"):
+        assert resolve_model(s) == s
+
+
+def test_resolve_model_hf_ref_calls_hf_hub_download(monkeypatch, tmp_path):
+    """resolve_model('owner/repo:file.gguf') triggers hf_hub_download."""
+    import sys
+    import types
+
+    calls = {}
+
+    def fake_dl(repo_id, filename, cache_dir, **kw):
+        calls["repo_id"] = repo_id
+        calls["filename"] = filename
+        calls["cache_dir"] = cache_dir
+        return str(tmp_path / "fake.gguf")
+
+    fake_hub = types.ModuleType("huggingface_hub")
+    fake_hub.hf_hub_download = fake_dl  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "huggingface_hub", fake_hub)
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+
+    from turboquant.config import resolve_model
+
+    out = resolve_model("TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF:tinyllama-Q4_K_M.gguf")
+    assert calls["repo_id"] == "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF"
+    assert calls["filename"] == "tinyllama-Q4_K_M.gguf"
+    assert "turbocpp/models" in calls["cache_dir"].replace("\\", "/")
+    assert out == str(tmp_path / "fake.gguf")

@@ -59,6 +59,11 @@ turbocpp pick-wheel                                         # auto-pick fastest 
 turbocpp pick-wheel  --gpu cuda12                           # GPU variant URL
 turbocpp bench                                              # rotation/quant MSE microbench
 
+# `-m` accepts: a local GGUF, a config alias, or a HuggingFace ref. The
+# ref is downloaded on first use into ~/.cache/turbocpp/models/ and cached.
+turbocpp generate -m TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF:tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf -p "Hi"
+turbocpp generate -m hf://TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf -p "Hi"
+
 # every llama.cpp tool, no submodule, no compile — pulls ggml-org/llama.cpp:full
 turbocpp convert    /models/Llama-3-8B    --outfile /models/m.gguf
 turbocpp quantize   /models/m.gguf  /models/m-Q4_K_M.gguf  Q4_K_M

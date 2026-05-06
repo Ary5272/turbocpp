@@ -994,7 +994,12 @@ def main(argv=None) -> int:
     # generate
     gd = _defaults_for("generate")
     pg = sub.add_parser("generate", help="run inference via llama-cpp-python")
-    pg.add_argument("-m", "--model", required=True, help="path to GGUF (or alias from config)")
+    pg.add_argument(
+        "-m",
+        "--model",
+        required=True,
+        help="GGUF path | alias | hf://owner/repo/file.gguf | owner/repo:file.gguf",
+    )
     pg.add_argument(
         "-p", "--prompt", default=None, help="prompt text (else --prompt-file or stdin)"
     )
@@ -1045,7 +1050,12 @@ def main(argv=None) -> int:
 
     # serve
     ps = sub.add_parser("serve", help="OpenAI-compatible HTTP server")
-    ps.add_argument("-m", "--model", required=True, help="path to GGUF (or alias)")
+    ps.add_argument(
+        "-m",
+        "--model",
+        required=True,
+        help="GGUF path | alias | hf://owner/repo/file.gguf | owner/repo:file.gguf",
+    )
     ps.add_argument("--host", default="127.0.0.1")
     ps.add_argument("--port", type=int, default=8080)
     ps.add_argument("--ctx", type=int, default=4096)
@@ -1089,7 +1099,12 @@ def main(argv=None) -> int:
     # chat (multi-turn REPL with auto chat template + persistent history)
     cd = _defaults_for("chat")
     pc = sub.add_parser("chat", help="multi-turn chat REPL (auto template, persistent history)")
-    pc.add_argument("-m", "--model", required=True, help="GGUF path (or alias from config)")
+    pc.add_argument(
+        "-m",
+        "--model",
+        required=True,
+        help="GGUF path | alias | hf://owner/repo/file.gguf | owner/repo:file.gguf",
+    )
     pc.add_argument("-s", "--system", default=cd.get("system", ""), help="system prompt")
     pc.add_argument("-n", "--n-predict", type=int, default=cd.get("n_predict", 512))
     pc.add_argument("-t", "--temperature", type=float, default=cd.get("temperature", 0.7))
@@ -1124,7 +1139,12 @@ def main(argv=None) -> int:
 
     # embed
     pe = sub.add_parser("embed", help="compute sentence embeddings")
-    pe.add_argument("-m", "--model", required=True, help="GGUF path / alias")
+    pe.add_argument(
+        "-m",
+        "--model",
+        required=True,
+        help="GGUF path | alias | hf://owner/repo/file.gguf | owner/repo:file.gguf",
+    )
     pe.add_argument("--text", help="single sentence (else reads stdin/--input lines)")
     pe.add_argument("-i", "--input", help="path to a text file (one sentence per line)")
     pe.add_argument("--format", choices=("json", "jsonl", "tsv"), default="json")
@@ -1147,7 +1167,12 @@ def main(argv=None) -> int:
 
     # tokenize
     pt = sub.add_parser("tokenize", help="tokenize a prompt (count / ids / pieces)")
-    pt.add_argument("-m", "--model", required=True, help="GGUF path / alias")
+    pt.add_argument(
+        "-m",
+        "--model",
+        required=True,
+        help="GGUF path | alias | hf://owner/repo/file.gguf | owner/repo:file.gguf",
+    )
     pt.add_argument("--text", help="text to tokenize")
     pt.add_argument("-i", "--input", help="file with text to tokenize")
     pt.add_argument("--format", choices=("count", "ids", "pieces"), default="count")
