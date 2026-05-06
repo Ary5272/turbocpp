@@ -70,10 +70,14 @@ jobs:
           name:     ${{ github.event.inputs.tag || github.ref_name }}
           generate_release_notes: true
           fail_on_unmatched_files: true
+          # `dist/turbocpp-*.whl` matches BOTH the version-stamped wheel
+          # and the unversioned alias - no need to list the alias again.
+          # Listing it twice triggered an "asset Not Found" race in
+          # softprops/action-gh-release@v3.0.0 (concurrent uploads of the
+          # same filename).
           files: |
             dist/turbocpp-*.whl
             dist/turbocpp-*.tar.gz
-            dist/turbocpp-py3-none-any.whl
 
       # Surface secret presence via a step output — GitHub rejects
       # `secrets.*` directly inside step-level `if:` at parse time.
