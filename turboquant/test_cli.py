@@ -579,6 +579,61 @@ def test_resolve_model_local_paths_passthrough():
         assert resolve_model(s) == s
 
 
+@pytest.mark.parametrize(
+    "arg,expected",
+    [
+        ("./model", True),
+        ("/abs/path", True),
+        ("rel/path", True),
+        ("C:\\m", True),
+        ("~/m", True),
+        ("chat", False),
+        ("generate", False),
+        ("rotate", False),
+        ("-h", False),
+        ("--block", False),
+        ("model.gguf", False),
+    ],
+)
+def test_main_module_path_heuristic(arg, expected):
+    """`python -m turboquant <subcommand>` must NOT silently rewrite the
+    subcommand to `rotate <subcommand>` (which broke `--help` for any
+    subcommand added after v0.3)."""
+    from turboquant.__main__ import _looks_like_path
+
+    assert _looks_like_path(arg) is expected
+
+
+def test_main_module_does_not_hijack_subcommand(monkeypatch):
+    """End-to-end: `python -m turboquant chat --help` must reach the
+    chat subparser, not get rewritten to `rotate chat --help`."""
+    from turboquant import __main__ as m
+
+    captured = []
+
+    def fake_main(args):
+        captured.append(list(args))
+        return 0
+
+    monkeypatch.setattr(m, "_main", fake_main)
+    m.main(["chat", "--help"])
+    assert captured == [["chat", "--help"]]
+    captured.clear()
+    m.main(["doctor"])
+    assert captured == [["doctor"]]
+
+
+def test_main_module_rotate_back_compat(monkeypatch):
+    """The pre-0.3 form `python -m turboquant <model_dir> <out_dir>` is
+    still rewritten to `rotate <model_dir> <out_dir>`."""
+    from turboquant import __main__ as m
+
+    captured = []
+    monkeypatch.setattr(m, "_main", lambda args: captured.append(list(args)) or 0)
+    m.main(["./Llama-3-8B", "./out-dir"])
+    assert captured == [["rotate", "./Llama-3-8B", "./out-dir"]]
+
+
 def test_resolve_model_hf_ref_calls_hf_hub_download(monkeypatch, tmp_path):
     """resolve_model('owner/repo:file.gguf') triggers hf_hub_download."""
     import sys
