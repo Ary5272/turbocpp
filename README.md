@@ -15,23 +15,37 @@
 | | |
 |---|---|
 | 🚀 **Live demo** | [huggingface.co/spaces/AIencoder/turboquant-visualizer](https://huggingface.co/spaces/AIencoder/turboquant-visualizer) |
-| 📦 **Python package** | `pip install https://huggingface.co/datasets/AIencoder/TurboCpp_Wheels/resolve/main/turbocpp/turbocpp-0.3.0-py3-none-any.whl` |
+| 📦 **Python package** | `pip install turbocpp` ([PyPI](https://pypi.org/project/turbocpp/)) — `[runtime]` extra adds llama-cpp-python |
 | 🐳 **Docker images** | `docker pull ghcr.io/ary5272/turbocpp:cpu` (also `:server`, `:turboquant`) |
 | 🔧 **Wheel mirror** | [datasets/AIencoder/TurboCpp_Wheels](https://huggingface.co/datasets/AIencoder/TurboCpp_Wheels) — prebuilt llama-cpp-python for every CPU feature combo |
 
 ## Install
 
 ```bash
-# From the GitHub Release (always points at the latest tag):
+# From PyPI (recommended — pulls llama-cpp-python source build via [runtime]):
+pip install 'turbocpp[runtime]'
+
+# If your CPU/OS lacks a build toolchain, skip [runtime] and install
+# llama-cpp-python from a prebuilt wheel matched to this host:
+pip install turbocpp
+pip install $(turbocpp pick-wheel)
+
+# From the GitHub Release (always points at the latest tag — useful in
+# environments where PyPI is mirrored / blocked):
 pip install https://github.com/Ary5272/turbocpp/releases/latest/download/turbocpp-py3-none-any.whl
+```
 
-# Plus the inference engine (also a prebuilt wheel — never source-builds):
-pip install \
-    https://github.com/Ary5272/turbocpp/releases/latest/download/turbocpp-py3-none-any.whl \
-    https://huggingface.co/datasets/AIencoder/TurboCpp_Wheels/resolve/main/llama_cpp_python-0.3.16%2Bbasic_avx2_fma_f16c-cp312-cp312-manylinux_2_31_x86_64.whl
+After install, `turbocpp doctor` reports what's wired:
 
-# Or the HF dataset mirror if GitHub is blocked at your endpoint:
-pip install https://huggingface.co/datasets/AIencoder/TurboCpp_Wheels/resolve/main/turbocpp/turbocpp-0.3.0-py3-none-any.whl
+```bash
+$ turbocpp doctor
+turbocpp 0.10.1 doctor - linux
+  python              3.11.9
+  cpu_variant         avx2_fma_f16c
+  best_wheel_url      https://huggingface.co/datasets/AIencoder/TurboCpp_Wheels/...
+  llama_cpp           installed (0.3.16, gpu_offload=True)
+  docker_present      True
+  llama_image_pulled  True
 ```
 
 After install you get a `turbocpp` CLI:
@@ -86,8 +100,19 @@ top. Together: 2-4× over a stock `pip install llama-cpp-python` flow.
 
 ## Docker
 
+Three images on GHCR. All three install llama-cpp-python from a
+**prebuilt wheel** at `AIencoder/TurboCpp_Wheels` — no source compile,
+~30s image build instead of ~10 min, runs on any x86_64 host with
+AVX2 + FMA + F16C.
+
+| image | what's inside | size |
+|---|---|---|
+| `ghcr.io/ary5272/turbocpp:cpu`        | turbocpp CLI + llama-cpp-python (prebuilt wheel)           | ~500 MB |
+| `ghcr.io/ary5272/turbocpp:server`     | inherits `:cpu`, ENTRYPOINT = `turbocpp serve` on `:8080`  | ~500 MB |
+| `ghcr.io/ary5272/turbocpp:turboquant` | inherits `:cpu`, adds CPU-only PyTorch for `rotate`        | ~2.0 GB |
+
 ```bash
-# Inference runtime + unified CLI (small image, ~500 MB)
+# Inference runtime + unified CLI
 docker run --rm -v ~/models:/models ghcr.io/ary5272/turbocpp:cpu \
        generate -m /models/m.gguf -p "Hello" -n 64
 
@@ -95,15 +120,20 @@ docker run --rm -v ~/models:/models ghcr.io/ary5272/turbocpp:cpu \
 docker run --rm -p 8080:8080 -v ~/models:/models ghcr.io/ary5272/turbocpp:server \
        -m /models/m.gguf
 
-# Adds torch + transformers for the offline rotation step (~2 GB)
+# Offline Hadamard rotation
 docker run --rm -v ~/models:/models ghcr.io/ary5272/turbocpp:turboquant \
        rotate /models/Llama-3-8B /models/Llama-3-8B-tq
 ```
 
-All three images install llama-cpp-python from a **prebuilt wheel** at
-`AIencoder/TurboCpp_Wheels`. No source compile step → image build takes
-~30 seconds instead of ~10 minutes, and the same image runs on any
-x86_64 host with AVX2 + FMA + F16C.
+A new image is pushed to GHCR on every `main` commit and every `v*` tag
+([docker.yml](.github/workflows/docker.yml)). Build locally with a
+different CPU baseline:
+
+```bash
+docker build --target cpu \
+    --build-arg LLAMA_CMAKE_FLAGS="-DGGML_NATIVE=OFF -DGGML_AVX512=ON -DGGML_AVX2=ON -DGGML_FMA=ON -DGGML_F16C=ON" \
+    -t turbocpp:cpu-avx512 .
+```
 
 ```
    ┌───────────────────────────────────────────────────────────────┐
@@ -188,73 +218,28 @@ GGUF and runs `llama-bench` on each.
 
 ## Quick start
 
-```bash
-# 1. Clone with submodules
-git clone --recursive https://github.com/Ary5272/turbocpp
-cd turbocpp
-
-# 2. Build llama.cpp (CPU; see llama.cpp/README.md for CUDA / Metal / Vulkan)
-cmake -S llama.cpp -B llama.cpp/build -DCMAKE_BUILD_TYPE=Release
-cmake --build llama.cpp/build -j
-
-# 3. Install the turboquant Python package
-pip install -e .                        # uses pyproject.toml
-# or:  pip install -r turboquant/requirements.txt
-
-# 4. End-to-end (the SPEED path: rotated Q3_K_M ≈ baseline Q4_K_M quality):
-python -m turboquant ~/models/Llama-3-8B  ~/models/Llama-3-8B-tq
-python llama.cpp/convert_hf_to_gguf.py ~/models/Llama-3-8B-tq \
-       --outfile Llama-3-8B-tq.gguf
-llama.cpp/build/bin/llama-quantize \
-       Llama-3-8B-tq.gguf Llama-3-8B-tq-Q3_K_M.gguf Q3_K_M
-llama.cpp/build/bin/llama-cli -m Llama-3-8B-tq-Q3_K_M.gguf \
-       -p "Explain Hadamard quantization in one sentence:" -n 100
-
-# 5. Or the QUALITY path (same speed as baseline, better numbers):
-llama.cpp/build/bin/llama-quantize \
-       Llama-3-8B-tq.gguf Llama-3-8B-tq-Q4_K_M.gguf Q4_K_M
-```
-
-## Docker
-
-Same accessibility model as `ghcr.io/ggml-org/llama.cpp` — three pre-built
-images on GitHub Container Registry, plus a top-level `docker-compose.yml`.
-
-| image | what's inside | size |
-|---|---|---|
-| `ghcr.io/ary5272/turbocpp:cpu`        | full llama.cpp toolchain (`llama-cli`, `llama-server`, `llama-quantize`, `llama-bench`, `llama-perplexity`, …) | ~150 MB |
-| `ghcr.io/ary5272/turbocpp:server`     | inherits `:cpu`, ENTRYPOINT = `llama-server` on `:8080` | ~150 MB |
-| `ghcr.io/ary5272/turbocpp:turboquant` | inherits `:cpu`, adds CPU-only PyTorch + the turboquant Python package | ~2.0 GB |
+No git submodule, no manual cmake — every llama.cpp tool is forwarded
+into ggml-org's official Docker image, so a clean `pip install` is the
+whole setup.
 
 ```bash
-# 1. Quick inference
-docker run --rm -v $PWD/models:/models ghcr.io/ary5272/turbocpp:cpu \
-    llama-cli -m /models/model.gguf -p "Hello"
+# 1. Install
+pip install 'turbocpp[runtime]'
 
-# 2. OpenAI-compatible HTTP server
-docker run --rm -p 8080:8080 -v $PWD/models:/models \
-    ghcr.io/ary5272/turbocpp:server -m /models/model.gguf
+# 2. Verify (downloads TinyLlama, runs a sample completion):
+turbocpp quickstart
 
-# 3. End-to-end TurboQuant preprocessing
-docker run --rm -v $PWD/models:/models -v $PWD/hf_cache:/root/.cache/huggingface \
-    ghcr.io/ary5272/turbocpp:turboquant \
-    python -m turboquant /models/Llama-3-8B /models/Llama-3-8B-tq
+# 3. End-to-end (the SPEED path: rotated Q3_K_M ≈ baseline Q4_K_M quality).
+#    Each step delegates to the right tool — no cmake, no submodule.
+turbocpp rotate    ~/models/Llama-3-8B  ~/models/Llama-3-8B-tq
+turbocpp convert   ~/models/Llama-3-8B-tq  --outfile Llama-3-8B-tq.gguf
+turbocpp quantize  Llama-3-8B-tq.gguf  Llama-3-8B-tq-Q3_K_M.gguf  Q3_K_M
+turbocpp generate  -m Llama-3-8B-tq-Q3_K_M.gguf \
+                   -p "Explain Hadamard quantization in one sentence:" -n 100
 
-# Or via docker compose:
-docker compose --profile server up
-docker compose --profile tools run --rm turboquant python -m turboquant ...
+# 4. Or the QUALITY path (same speed as baseline, better numbers):
+turbocpp quantize  Llama-3-8B-tq.gguf  Llama-3-8B-tq-Q4_K_M.gguf  Q4_K_M
 ```
-
-Build locally to enable a different CPU baseline (e.g. AVX-512):
-
-```bash
-docker build --target cpu \
-    --build-arg LLAMA_CMAKE_FLAGS="-DGGML_NATIVE=OFF -DGGML_AVX512=ON -DGGML_AVX2=ON -DGGML_FMA=ON -DGGML_F16C=ON" \
-    -t turbocpp:cpu-avx512 .
-```
-
-A new image is pushed to GHCR on every `main` commit and every `v*` tag —
-see [`.github/workflows/docker.yml`](.github/workflows/docker.yml).
 
 ## TurboQuant: the math in one block
 
@@ -285,12 +270,12 @@ See [`turboquant/turboquant.py`](turboquant/turboquant.py) — 100 lines.
 ## Tests
 
 ```bash
-pytest turboquant/test_turboquant.py        # rotation invariants + math
+pytest -q turboquant/                       # rotation math + CLI parser (~65 tests)
 ctest --test-dir extras/standalone/build    # standalone-engine kernels
 ```
 
 CI runs the turboquant tests on Linux + Windows + macOS, plus builds the
-standalone engine and runs its 15 unit tests.
+standalone engine and runs its unit tests.
 
 ## Related work
 
@@ -302,4 +287,4 @@ standalone engine and runs its 15 unit tests.
 ## License
 
 - TurboQuant code: **MIT** ([LICENSE](LICENSE))
-- llama.cpp submodule: **MIT** (their `LICENSE`)
+- llama.cpp (pulled at runtime via Docker, no submodule): **MIT** ([upstream LICENSE](https://github.com/ggml-org/llama.cpp/blob/master/LICENSE))
