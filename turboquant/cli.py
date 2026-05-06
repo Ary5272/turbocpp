@@ -278,7 +278,7 @@ def _cmd_chat(args) -> int:
             print(f"(history save failed: {e})", file=sys.stderr)
 
     print(
-        "turbocpp chat — slash cmds: /quit /reset /save P /load P /multi /history /system TEXT\n"
+        "turbocpp chat — slash cmds: /help /quit /reset /save P /load P /multi /history /system TEXT\n"
         f"history: {history_file}",
         file=sys.stderr,
     )
@@ -312,6 +312,18 @@ def _cmd_chat(args) -> int:
             return 0
         s = user.strip()
         if not s:
+            continue
+        if s in ("/help", "/?"):
+            print(
+                "  /quit, /exit          end the session (history saved)\n"
+                "  /reset                clear conversation\n"
+                "  /history              dump conversation so far\n"
+                "  /system <TEXT>        replace the system prompt\n"
+                "  /save <PATH>          save to PATH (.md or .json by extension)\n"
+                "  /load <PATH>          load JSON conversation from PATH\n"
+                "  /multi                next message reads until a line saying EOF",
+                file=sys.stderr,
+            )
             continue
         if s in ("/quit", "/exit"):
             save()
