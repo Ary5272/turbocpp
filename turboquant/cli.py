@@ -49,10 +49,9 @@ def _cmd_rotate(args) -> int:
     model.save_pretrained(args.out_dir, safe_serialization=True)
     tok.save_pretrained(args.out_dir)
     print(
-        "done. next: convert + quantize with llama.cpp:\n"
-        f"  python llama.cpp/convert_hf_to_gguf.py {args.out_dir} "
-        f"--outfile {args.out_dir.name}.gguf\n"
-        f"  llama.cpp/build/bin/llama-quantize {args.out_dir.name}.gguf "
+        "done. next: convert + quantize:\n"
+        f"  turbocpp convert  {args.out_dir} --outfile {args.out_dir.name}.gguf\n"
+        f"  turbocpp quantize {args.out_dir.name}.gguf "
         f"{args.out_dir.name}-Q4_K_M.gguf Q4_K_M"
     )
     return 0
