@@ -6,6 +6,10 @@ from `git tag` + commit subjects (see `scripts/gen_changelog.sh`).
 
 ## [Unreleased]
 
+## [v0.10.1] - 2026-05-06
+
+fix Windows cp1252 crash on `turbocpp --help`
+
 ## [v0.10.0] - 2026-05-06
 
 runtime_probe, version+rm-model, --n-gpu-layers, JSONL, default Q4_K_M, badges, CHANGELOG
