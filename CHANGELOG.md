@@ -6,6 +6,10 @@ from `git tag` + commit subjects (see `scripts/gen_changelog.sh`).
 
 ## [Unreleased]
 
+## [v0.17.0] - 2026-05-06
+
+chat /help+/tokens, /save+/load polish, serve startup URL, speculative -ngl, rotate help, doctor color toggle
+
 ## [v0.16.0] - 2026-05-06
 
 download hf://, speculative pre-flight, CI per-job timeouts, Dockerfile libopenblas0 + sanity probe
