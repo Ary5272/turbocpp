@@ -39,6 +39,15 @@ def _cmd_rotate(args) -> int:
 
     from . import rotate_llama_model
 
+    # Refuse to overwrite an existing non-empty output dir without an
+    # explicit --overwrite. Saves the user from clobbering their last
+    # rotation, which is expensive (minutes for a 7B model).
+    if args.out_dir.exists() and any(args.out_dir.iterdir()) and not args.overwrite:
+        sys.exit(
+            f"refusing to write into non-empty {args.out_dir} (pass --overwrite "
+            f"to allow, or pick a different out_dir)"
+        )
+
     print(f"loading {args.model_dir} ...")
     model = AutoModelForCausalLM.from_pretrained(
         args.model_dir, torch_dtype=torch.float32, low_cpu_mem_usage=True
@@ -1250,6 +1259,11 @@ def main(argv=None) -> int:
     pr.add_argument("--block", type=int, default=128, help="Hadamard block size (power of 2)")
     pr.add_argument(
         "--no-fuse", action="store_true", help="skip RMSNorm gamma -> linear fusion (debug)"
+    )
+    pr.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="allow writing into a non-empty out_dir (default: refuse to clobber)",
     )
     pr.set_defaults(func=_cmd_rotate)
 
