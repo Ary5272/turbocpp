@@ -627,12 +627,31 @@ def _cmd_doctor(args) -> int:
 
 def _cmd_info(args) -> int:
     """Print the runtime topology as JSON. Single source of truth lives
-    in runtime_probe.collect_runtime_topology() so info and doctor agree."""
+    in runtime_probe.collect_runtime_topology() so info and doctor agree.
+
+    With --field KEY, prints just the value at that top-level key (or
+    a `dotted.path` walking nested dicts) - lets shell scripts skip jq."""
     import json
 
     from .runtime_probe import collect_runtime_topology
 
-    print(json.dumps(collect_runtime_topology(), indent=2))
+    info = collect_runtime_topology()
+    field = getattr(args, "field", None)
+    if field:
+        node: object = info
+        for part in field.split("."):
+            if isinstance(node, dict) and part in node:
+                node = node[part]
+            else:
+                print(f"error: no such field: {field}", file=sys.stderr)
+                return 2
+        if isinstance(node, (dict, list)):
+            print(json.dumps(node, indent=2))
+        else:
+            # Scalar: print bare so shells can `var=$(turbocpp info --field ...)`.
+            print(node)
+        return 0
+    print(json.dumps(info, indent=2))
     return 0
 
 
@@ -1593,6 +1612,10 @@ def main(argv=None) -> int:
 
     # info
     pi = sub.add_parser("info", help="show runtime topology (wheel, backends, GPU, ...)")
+    pi.add_argument(
+        "--field",
+        help="dotted path to extract one value (e.g. 'cpu_variant', 'llama_cpp.version')",
+    )
     pi.set_defaults(func=_cmd_info)
 
     # version

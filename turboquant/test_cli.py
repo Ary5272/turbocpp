@@ -267,6 +267,33 @@ def test_cache_dir_respects_xdg_cache_home(tmp_path, monkeypatch):
     assert state_dir() == tmp_path / "turbocpp"
 
 
+def test_info_field_extracts_scalar(capsys):
+    from turboquant.cli import main
+
+    rc = main(["info", "--field", "cpu_variant"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    # No JSON wrapping for scalars, so the value is printed bare.
+    assert "{" not in out
+    assert "}" not in out
+
+
+def test_info_field_dotted_path(capsys):
+    from turboquant.cli import main
+
+    # turbocpp is always a string scalar; cpu_variant is too.
+    rc = main(["info", "--field", "platform"])
+    assert rc == 0
+    assert capsys.readouterr().out.strip()
+
+
+def test_info_field_unknown_returns_2(capsys):
+    from turboquant.cli import main
+
+    rc = main(["info", "--field", "nonexistent_xyz"])
+    assert rc == 2
+
+
 def test_chat_history_file_path(monkeypatch, tmp_path):
     """Chat history sidecar lives at <state_dir>/chat-<sha1[:12]>.json - the
     sha1 keys per-model, so swapping models doesn't clobber history."""
