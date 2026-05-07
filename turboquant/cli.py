@@ -1141,12 +1141,17 @@ def _cmd_serve(args) -> int:
         server_settings=server_settings,
         model_settings=model_settings,
     )
-    if api_key and not args.quiet:
+    if not args.quiet:
         print(
-            f"[serve] API key required: clients must send "
-            f"'Authorization: Bearer {api_key[:6]}…' (truncated)",
+            f"[serve] http://{args.host}:{args.port}  (OpenAI-compatible: "
+            f"/v1/chat/completions, /v1/completions, /v1/embeddings)",
             file=sys.stderr,
         )
+        if api_key:
+            print(
+                f"[serve] auth required: 'Authorization: Bearer {api_key[:6]}...' (truncated)",
+                file=sys.stderr,
+            )
     uvicorn.run(app, host=args.host, port=args.port)
     return 0
 
