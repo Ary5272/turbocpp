@@ -42,6 +42,22 @@ def config_path() -> Path:
     return base / "turbocpp" / "config.toml"
 
 
+def cache_dir() -> Path:
+    """`~/.cache/turbocpp/models/` (or $XDG_CACHE_HOME/turbocpp/models/).
+
+    Used by every command that reads or writes a cached GGUF, so all
+    five callers stay in sync. Does NOT create the directory; callers
+    that need it created should call .mkdir(parents=True, exist_ok=True)."""
+    return state_dir() / "models"
+
+
+def state_dir() -> Path:
+    """`~/.cache/turbocpp/` (or $XDG_CACHE_HOME/turbocpp/).
+
+    Sibling to `cache_dir()` for non-model state (e.g. chat history)."""
+    return Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "turbocpp"
+
+
 def load() -> dict[str, Any]:
     """Return parsed config or empty dict on absent / invalid file."""
     p = config_path()
@@ -127,6 +143,6 @@ def _ensure_hf_cached(repo: str, filename: str) -> str:
             f"cannot resolve {repo}:{filename}: huggingface_hub not installed. "
             f"run: pip install 'huggingface_hub<2.0'"
         ) from e
-    cache = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "turbocpp" / "models"
+    cache = cache_dir()
     cache.mkdir(parents=True, exist_ok=True)
     return hf_hub_download(repo_id=repo, filename=filename, cache_dir=str(cache))

@@ -301,14 +301,14 @@ def _cmd_chat(args) -> int:
     import os
     from pathlib import Path
 
-    from .config import resolve_model
+    from .config import resolve_model, state_dir
 
     args.model = resolve_model(args.model)
 
-    cache_dir = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "turbocpp"
-    cache_dir.mkdir(parents=True, exist_ok=True)
+    state = state_dir()
+    state.mkdir(parents=True, exist_ok=True)
     model_id = hashlib.sha1(str(Path(args.model).resolve()).encode()).hexdigest()[:12]
-    history_file = cache_dir / f"chat-{model_id}.json"
+    history_file = state / f"chat-{model_id}.json"
 
     msgs: list[dict] = []
     if not args.no_resume and history_file.exists():
@@ -594,10 +594,9 @@ def _cmd_version(args) -> int:
 def _cmd_rm_model(args) -> int:
     """Delete cached GGUFs in ~/.cache/turbocpp/models/. With --all wipes
     the whole cache; otherwise pass exact filename(s)."""
-    import os
-    from pathlib import Path
+    from .config import cache_dir
 
-    cache = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "turbocpp" / "models"
+    cache = cache_dir()
     if not cache.is_dir():
         print("(no cache directory)", file=sys.stderr)
         return 0
@@ -801,10 +800,9 @@ def _cmd_download(args) -> int:
             file=sys.stderr,
         )
         return 2
-    import os
-    from pathlib import Path
+    from .config import cache_dir
 
-    cache = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "turbocpp" / "models"
+    cache = cache_dir()
     cache.mkdir(parents=True, exist_ok=True)
     # Allow `turbocpp download owner/repo:file.gguf` (HF-ref form) as a
     # shorthand for `turbocpp download owner/repo file.gguf`. Lets users
@@ -849,14 +847,11 @@ def _cmd_download(args) -> int:
 def _cmd_list_models(args) -> int:
     """List GGUFs available to turbocpp: aliases from config.toml + files
     in ~/.cache/turbocpp/models/."""
-    import os
-    from pathlib import Path
-
-    from .config import load
+    from .config import cache_dir, load
 
     cfg = load()
     aliases = cfg.get("models", {}) or {}
-    cache = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "turbocpp" / "models"
+    cache = cache_dir()
     cache_files = sorted(cache.rglob("*.gguf")) if cache.is_dir() else []
 
     if args.format == "json":
@@ -986,10 +981,9 @@ def _cmd_quickstart(args) -> int:
     except ImportError:
         print("needs: pip install 'huggingface_hub<2.0'", file=sys.stderr)
         return 2
-    import os
-    from pathlib import Path
+    from .config import cache_dir
 
-    cache = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "turbocpp" / "models"
+    cache = cache_dir()
     cache.mkdir(parents=True, exist_ok=True)
     repo = "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF"
     fname = "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
