@@ -533,10 +533,13 @@ def _cmd_speculative(args) -> int:
     the upstream-tested implementation."""
     from pathlib import Path
 
+    from .config import resolve_model
     from .llama_docker import DEFAULT_IMAGE, run_tool
 
-    target_p = Path(args.model).resolve()
-    draft_p = Path(args.draft).resolve()
+    # HF refs (`owner/repo:file.gguf` or `hf://...`) are downloaded to the
+    # cache, then bind-mounted into the container like any local path.
+    target_p = Path(resolve_model(args.model)).resolve()
+    draft_p = Path(resolve_model(args.draft)).resolve()
     if target_p.parent != draft_p.parent:
         print("note: target and draft live in different dirs; mounting both", file=sys.stderr)
 
