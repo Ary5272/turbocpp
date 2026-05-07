@@ -6,6 +6,10 @@ from `git tag` + commit subjects (see `scripts/gen_changelog.sh`).
 
 ## [Unreleased]
 
+## [v0.23.0] - 2026-05-07
+
+model-not-found friendly errors in _open_llama + serve pre-flight check
+
 ## [v0.22.0] - 2026-05-07
 
 rotate --overwrite guard against accidental clobber

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "turbocpp"
-version = "0.23.0"
+version = "0.24.0"
 description = "llama.cpp + TurboQuant — Hadamard-rotation preprocessor for LLM weights, plus a unified CLI on top of llama-cpp-python"
 readme = "README.md"
 requires-python = ">=3.10"
