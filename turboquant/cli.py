@@ -161,6 +161,20 @@ def _open_llama(args, **overrides):
     ngl = getattr(args, "n_gpu_layers", 0)
     if ngl:
         kwargs["n_gpu_layers"] = ngl
+        # Warn early if the installed wheel is CPU-only - llama-cpp-python
+        # silently ignores n_gpu_layers in that case, which is confusing.
+        try:
+            from llama_cpp import llama_supports_gpu_offload  # type: ignore
+
+            if not bool(llama_supports_gpu_offload()):
+                print(
+                    "[turbocpp] warning: -ngl was set but the installed "
+                    "llama-cpp-python wheel is CPU-only. Install a GPU wheel:\n"
+                    "  `turbocpp pick-wheel --gpu cuda12 | xargs pip install`",
+                    file=sys.stderr,
+                )
+        except ImportError:
+            pass
     # Optional shared knobs (only forwarded when the parser actually had
     # them, so subcommands that don't expose them aren't affected).
     n_batch = getattr(args, "n_batch", 0)
