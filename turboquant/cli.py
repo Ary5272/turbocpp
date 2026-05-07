@@ -934,11 +934,18 @@ def _cmd_serve(args) -> int:
         return 2
 
     # Resolve API key from --api-key, $TURBOCPP_API_KEY, or none.
+    # Special-case: --api-key generate (or env=generate) emits a fresh
+    # 32-char URL-safe random key, so users can spin up an authed server
+    # without first inventing a secret.
     import os as _os
+    import secrets
 
     from .config import resolve_model
 
     api_key = args.api_key or _os.environ.get("TURBOCPP_API_KEY", "")
+    if api_key.lower() in ("generate", "auto", "random"):
+        api_key = secrets.token_urlsafe(24)
+        print(f"[serve] generated API key: {api_key}", file=sys.stderr)
 
     ssettings_kwargs: dict = dict(host=args.host, port=args.port)
     if api_key:
@@ -1114,7 +1121,9 @@ def main(argv=None) -> int:
         "--api-key",
         default="",
         help="require Bearer auth on every request (also reads "
-        "TURBOCPP_API_KEY env var). Empty string = no auth.",
+        "TURBOCPP_API_KEY env var). Empty string = no auth. "
+        "Pass 'generate' (or 'auto' / 'random') to mint a fresh "
+        "32-char URL-safe key on startup.",
     )
     ps.add_argument("-q", "--quiet", action="store_true", help="suppress startup banner")
     ps.add_argument(
