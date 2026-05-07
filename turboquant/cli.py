@@ -100,19 +100,33 @@ def _import_llama_cpp():
 
 def _build_grammar(args):
     """Construct a llama_cpp.LlamaGrammar from --grammar (GBNF) or
-    --json-schema. Returns None when neither is provided."""
+    --json-schema. Returns None when neither is provided.
+
+    Helpful errors when paths are wrong - llama-cpp-python's own messages
+    here are cryptic ('failed to parse grammar at offset 0' for a missing
+    file) and we'd rather tell the user 'we couldn't read your file'."""
     from pathlib import Path
 
     from llama_cpp import LlamaGrammar  # type: ignore
 
     if getattr(args, "grammar", None):
-        text = Path(args.grammar).read_text(encoding="utf-8")
+        path = Path(args.grammar)
+        if not path.is_file():
+            raise SystemExit(f"--grammar: file not found: {path}")
+        text = path.read_text(encoding="utf-8")
         return LlamaGrammar.from_string(text)
     if getattr(args, "json_schema", None):
         import json as _json
 
-        schema_text = Path(args.json_schema).read_text(encoding="utf-8")
-        return LlamaGrammar.from_json_schema(_json.dumps(_json.loads(schema_text)))
+        path = Path(args.json_schema)
+        if not path.is_file():
+            raise SystemExit(f"--json-schema: file not found: {path}")
+        schema_text = path.read_text(encoding="utf-8")
+        try:
+            schema_obj = _json.loads(schema_text)
+        except _json.JSONDecodeError as e:
+            raise SystemExit(f"--json-schema: invalid JSON in {path}: {e}") from None
+        return LlamaGrammar.from_json_schema(_json.dumps(schema_obj))
     return None
 
 
