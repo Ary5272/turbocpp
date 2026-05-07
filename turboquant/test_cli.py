@@ -215,6 +215,13 @@ def test_llama_tools_list_complete():
         (type("A", (), {}), {}),
     ],
 )
+def test_sampling_kwargs(args_obj, expected):
+    """_sampling_kwargs only forwards knobs the user actually set."""
+    from turboquant.cli import _sampling_kwargs
+
+    assert _sampling_kwargs(args_obj) == expected
+
+
 @pytest.mark.parametrize(
     "raw,expected",
     [
@@ -232,13 +239,6 @@ def test_stop_list(raw, expected):
 
     args = type("A", (), {"stop": raw})
     assert _stop_list(args) == expected
-
-
-def test_sampling_kwargs(args_obj, expected):
-    """_sampling_kwargs only forwards knobs the user actually set."""
-    from turboquant.cli import _sampling_kwargs
-
-    assert _sampling_kwargs(args_obj) == expected
 
 
 def test_cache_dir_respects_xdg_cache_home(tmp_path, monkeypatch):
