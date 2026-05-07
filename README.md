@@ -35,18 +35,25 @@ pip install $(turbocpp pick-wheel)
 pip install https://github.com/Ary5272/turbocpp/releases/latest/download/turbocpp-py3-none-any.whl
 ```
 
-After install, `turbocpp doctor` reports what's wired:
+After install, `turbocpp doctor` reports what's wired (color-coded
+PASS / WARN / FAIL with one line per check):
 
 ```bash
 $ turbocpp doctor
-turbocpp 0.10.1 doctor - linux
-  python              3.11.9
-  cpu_variant         avx2_fma_f16c
-  best_wheel_url      https://huggingface.co/datasets/AIencoder/TurboCpp_Wheels/...
-  llama_cpp           installed (0.3.16, gpu_offload=True)
-  docker_present      True
-  llama_image_pulled  True
+turbocpp 0.20.0 doctor - linux
+  [PASS]  python ≥ 3.10                          3.11.9
+  [PASS]  cpu feature variant                    basic_avx2_fma_f16c
+  [PASS]  llama-cpp-python                       0.3.16
+  [PASS]  llama-cpp-python GPU offload           yes
+  [PASS]  docker on PATH                         /usr/bin/docker
+  [PASS]  image ghcr.io/ggml-org/llama.cpp:full  cached locally
+  [PASS]  GPU                                    nvidia (nvidia-smi)
+  [PASS]  torch (rotate)                         2.4.0 (cuda)
+  [PASS]  HF wheel URL reachable                 https://huggingface.co/...
 ```
+
+Pipe-friendly: `turbocpp doctor --no-color` strips ANSI escapes;
+`turbocpp doctor --no-network` skips the wheel HEAD probe.
 
 After install you get a `turbocpp` CLI:
 
