@@ -546,6 +546,29 @@ def test_top_level_help_is_ascii():
     assert argparse
 
 
+def test_top_level_help_includes_tips_epilog():
+    """The 'Tips:' epilog at the bottom of `--help` is the most reliable
+    spot to teach users about HF refs and config init."""
+    from io import StringIO
+
+    from turboquant.cli import main
+
+    buf = StringIO()
+    old_stdout = sys.stdout
+    sys.stdout = buf
+    try:
+        try:
+            main(["--help"])
+        except SystemExit:
+            pass
+    finally:
+        sys.stdout = old_stdout
+    text = buf.getvalue()
+    assert "Tips:" in text
+    assert "owner/repo:file.gguf" in text
+    assert "doctor" in text
+
+
 def test_ensure_utf8_stdio_is_idempotent():
     """`_ensure_utf8_stdio` must be a no-op safe-to-call-twice and must
     not raise when stdout doesn't support reconfigure (e.g. capsys)."""
