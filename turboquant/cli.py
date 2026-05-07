@@ -369,12 +369,27 @@ def _cmd_chat(args) -> int:
                 "  /quit, /exit          end the session (history saved)\n"
                 "  /reset                clear conversation\n"
                 "  /history              dump conversation so far\n"
+                "  /tokens               report token count of current history\n"
                 "  /system <TEXT>        replace the system prompt (no TEXT clears it)\n"
                 "  /save <PATH>          save to PATH (.md or .json by extension)\n"
                 "  /load <PATH>          load JSON conversation from PATH\n"
                 "  /multi                next message reads until a line saying EOF",
                 file=sys.stderr,
             )
+            continue
+        if s == "/tokens":
+            # Cheap conservative estimate: count BPE tokens of every message's
+            # content joined. Doesn't include chat-template framing tokens
+            # but gets the user 90% of the way to a context-budget answer.
+            try:
+                joined = "\n".join(m.get("content", "") for m in msgs).encode("utf-8")
+                ids = llm.tokenize(joined, add_bos=False)
+                print(
+                    f"({len(ids)} tokens of content; ctx={args.ctx})",
+                    file=sys.stderr,
+                )
+            except Exception as e:
+                print(f"(token count failed: {e})", file=sys.stderr)
             continue
         if s in ("/quit", "/exit"):
             save()
