@@ -56,8 +56,8 @@ Out of scope:
 ## Verifying a release
 
 ```bash
-# wheel
-gh attestation verify turbocpp-0.4.0-py3-none-any.whl \
+# wheel (download from a Release first)
+gh attestation verify turbocpp-py3-none-any.whl \
        --owner Ary5272
 
 # docker image
