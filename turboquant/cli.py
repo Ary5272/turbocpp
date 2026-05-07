@@ -355,7 +355,7 @@ def _cmd_chat(args) -> int:
                 "  /quit, /exit          end the session (history saved)\n"
                 "  /reset                clear conversation\n"
                 "  /history              dump conversation so far\n"
-                "  /system <TEXT>        replace the system prompt\n"
+                "  /system <TEXT>        replace the system prompt (no TEXT clears it)\n"
                 "  /save <PATH>          save to PATH (.md or .json by extension)\n"
                 "  /load <PATH>          load JSON conversation from PATH\n"
                 "  /multi                next message reads until a line saying EOF",
@@ -377,13 +377,17 @@ def _cmd_chat(args) -> int:
                 tag = {"system": "[sys]", "user": "[usr]", "assistant": "[ai ]"}.get(role, role)
                 print(f"{tag} {content[:300]}{'…' if len(content) > 300 else ''}", file=sys.stderr)
             continue
-        if s.startswith("/system "):
-            new_sys = s[len("/system ") :].strip()
-            # Replace existing system message or prepend.
+        if s.startswith("/system ") or s == "/system":
+            new_sys = s[len("/system ") :].strip() if s.startswith("/system ") else ""
+            # Drop any existing system message; prepend the new one only if
+            # non-empty (so `/system` alone clears the prompt).
             msgs = [m for m in msgs if m.get("role") != "system"]
-            msgs.insert(0, {"role": "system", "content": new_sys})
+            if new_sys:
+                msgs.insert(0, {"role": "system", "content": new_sys})
+                print("(system prompt updated)", file=sys.stderr)
+            else:
+                print("(system prompt cleared)", file=sys.stderr)
             save()
-            print("(system prompt updated)", file=sys.stderr)
             continue
         if s.startswith("/save "):
             target = Path(s[6:].strip())
