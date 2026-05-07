@@ -71,7 +71,7 @@ ARG TURBOCPP_PKG="turbocpp"
 RUN pip install --only-binary=:all: \
         "${LLAMA_CPP_WHEEL_URL}" \
         "${TURBOCPP_PKG}" \
-        "huggingface_hub>=0.24,<1.0" \
+        "huggingface_hub>=0.24,<2.0" \
         "gguf>=0.10"
 
 # Sanity check: the unified CLI is reachable AND every subcommand parses
