@@ -6,6 +6,10 @@ from `git tag` + commit subjects (see `scripts/gen_changelog.sh`).
 
 ## [Unreleased]
 
+## [v0.32.0] - 2026-05-07
+
+doctor exit-code docs, README usage examples, chat --history
+
 ## [v0.31.0] - 2026-05-07
 
 chat --history PATH override + image_present timeout
