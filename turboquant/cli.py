@@ -193,6 +193,28 @@ def _open_llama(args, **overrides):
     return Llama(**kwargs)
 
 
+def _sampling_kwargs(args) -> dict:
+    """Collect llama-cpp-python sampler kwargs from `args`. Only forwards
+    a knob when its argparse value differs from the inactive default, so
+    subcommands that don't expose a particular flag (or users who didn't
+    pass it) don't accidentally suppress llama.cpp's own defaults."""
+    out: dict = {}
+    if getattr(args, "temperature", None) is not None:
+        out["temperature"] = args.temperature
+    if getattr(args, "top_p", None) is not None:
+        out["top_p"] = args.top_p
+    top_k = getattr(args, "top_k", 0)
+    if top_k:
+        out["top_k"] = top_k
+    min_p = getattr(args, "min_p", 0.0)
+    if min_p:
+        out["min_p"] = min_p
+    rp = getattr(args, "repeat_penalty", 0.0)
+    if rp:
+        out["repeat_penalty"] = rp
+    return out
+
+
 def _resolve_prompt(args) -> str:
     """generate accepts --prompt, --prompt-file, or stdin. This picks
     whichever is provided (precedence: -p > -f > stdin)."""
@@ -220,14 +242,14 @@ def _cmd_generate(args) -> int:
     grammar = _build_grammar(args)
     t0 = time.time()
     n = 0
+    sampler = _sampling_kwargs(args)
     if args.logprobs and args.logprobs > 0:
         # Non-streaming, since llama-cpp-python only returns logprobs in
         # the full completion response.
         out = llm(
             prompt,
             max_tokens=args.n_predict,
-            temperature=args.temperature,
-            top_p=args.top_p,
+            **sampler,
             stop=args.stop or None,
             grammar=grammar,
             logprobs=args.logprobs,
@@ -252,8 +274,7 @@ def _cmd_generate(args) -> int:
         for chunk in llm(
             prompt,
             max_tokens=args.n_predict,
-            temperature=args.temperature,
-            top_p=args.top_p,
+            **sampler,
             stop=args.stop or None,
             grammar=grammar,
             echo=False,
@@ -1255,6 +1276,18 @@ def main(argv=None) -> int:
     pg.add_argument("-n", "--n-predict", type=int, default=gd.get("n_predict", 128))
     pg.add_argument("-t", "--temperature", type=float, default=gd.get("temperature", 0.7))
     pg.add_argument("--top-p", type=float, default=gd.get("top_p", 0.95))
+    pg.add_argument(
+        "--top-k", type=int, default=gd.get("top_k", 0), help="0 = disabled (uses model default)"
+    )
+    pg.add_argument(
+        "--min-p", type=float, default=gd.get("min_p", 0.0), help="min-p sampling threshold"
+    )
+    pg.add_argument(
+        "--repeat-penalty",
+        type=float,
+        default=gd.get("repeat_penalty", 0.0),
+        help="penalize repeating tokens (>1.0 = stronger; 0.0 = disabled)",
+    )
     pg.add_argument("--ctx", type=int, default=gd.get("ctx", 2048))
     pg.add_argument("--threads", type=int, default=gd.get("threads", 0))
     pg.add_argument(
