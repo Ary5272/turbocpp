@@ -1191,16 +1191,22 @@ def _cmd_pick_wheel(args) -> int:
         gpu_wheel_url,
     )
 
+    py_override = getattr(args, "py", None)
+    if py_override:
+        # `--py 3.11` -> "311" (cpu_features expects digits without dot).
+        py_override = py_override.replace(".", "")
     if args.gpu:
         print(f"# gpu backend: {args.gpu}")
-        print(gpu_wheel_url(args.gpu))
+        print(gpu_wheel_url(args.gpu, py_version=py_override))
         return 0
+    variant_override = getattr(args, "variant", None)
     if args.all:
         for u in candidate_urls():
             print(u)
     else:
-        print(f"# variant: {detect_variant()}")
-        print(best_wheel_url())
+        v = variant_override or detect_variant()
+        print(f"# variant: {v}")
+        print(best_wheel_url(variant=v, py_version=py_override))
     return 0
 
 
@@ -1735,6 +1741,16 @@ def main(argv=None) -> int:
         "--gpu",
         choices=("cuda12", "cuda11", "vulkan", "rocm", "sycl", "opencl"),
         help="force a GPU-accelerated variant instead of CPU",
+    )
+    pw.add_argument(
+        "--py",
+        metavar="X.Y",
+        help="override Python version tag (default: this interpreter's, e.g. 3.12)",
+    )
+    pw.add_argument(
+        "--variant",
+        help="force a specific CPU-feature variant tag (skips host probe; e.g. "
+        "basic_avx512_fma_f16c_vnni)",
     )
     pw.set_defaults(func=_cmd_pick_wheel)
 
