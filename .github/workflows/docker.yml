@@ -18,6 +18,10 @@ jobs:
   build:
     name: ${{ matrix.target }}
     runs-on: ubuntu-latest
+    # Hard ceiling so a stuck build can't burn an hour of runner time.
+    # Healthy builds: cpu ~9min, server ~3min, turboquant ~6min. 20min is
+    # 2x the slowest healthy run and well under GitHub's default 6h.
+    timeout-minutes: 20
     permissions:
       contents:     read
       packages:     write   # ghcr.io push
