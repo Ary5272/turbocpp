@@ -807,6 +807,64 @@ def _cmd_list_templates(args) -> int:
     return 0
 
 
+def _cmd_config(args) -> int:
+    """`turbocpp config show|init|path` - inspect / scaffold the toml file."""
+    from .config import config_path, load
+
+    p = config_path()
+    op = args.op
+    if op == "path":
+        print(p)
+        return 0
+    if op == "show":
+        if not p.is_file():
+            print(f"# (no config at {p})")
+            return 0
+        print(p.read_text(encoding="utf-8"), end="")
+        return 0
+    if op == "init":
+        if p.is_file() and not args.force:
+            print(f"refusing to overwrite {p} (pass --force)", file=sys.stderr)
+            return 2
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(
+            "# turbocpp config - all sections optional. Re-generate any time\n"
+            "# with `turbocpp config init --force`.\n\n"
+            "[defaults]\n"
+            "# threads = 8        # CPU threads (0 = auto)\n"
+            "# ctx     = 4096     # default context window\n\n"
+            "[defaults.generate]\n"
+            "# temperature = 0.7\n"
+            "# top_p       = 0.95\n\n"
+            "[defaults.chat]\n"
+            '# system    = "You are a concise assistant."\n'
+            "# n_predict = 1024\n\n"
+            "[models]\n"
+            "# Aliases: turbocpp generate -m tiny -p 'hi'\n"
+            '# tiny  = "~/models/tinyllama-Q4_K_M.gguf"\n',
+            encoding="utf-8",
+        )
+        print(f"wrote {p}")
+        return 0
+    # `validate` - parse and exit non-zero if the file is malformed.
+    if op == "validate":
+        if not p.is_file():
+            print(f"# (no config at {p})")
+            return 0
+        cfg = load()
+        if not cfg:
+            # load() swallows parse errors and returns {}; re-parse to surface them
+            try:
+                import tomllib  # py>=3.11
+            except ImportError:
+                import tomli as tomllib  # type: ignore[no-redef]
+            with p.open("rb") as f:
+                tomllib.load(f)  # raises on bad toml
+        print("ok")
+        return 0
+    raise SystemExit(f"unknown op: {op}")
+
+
 def _cmd_quickstart(args) -> int:
     """Download a tiny known-good GGUF and run a one-shot generation, so
     a fresh `pip install turbocpp[runtime]` can prove it works."""
@@ -1315,6 +1373,12 @@ def main(argv=None) -> int:
     # list-templates
     plt = sub.add_parser("list-templates", help="list chat templates known to llama-cpp-python")
     plt.set_defaults(func=_cmd_list_templates)
+
+    # config (show / init / path / validate)
+    pcfg = sub.add_parser("config", help="show / init / path / validate the turbocpp config.toml")
+    pcfg.add_argument("op", choices=("show", "init", "path", "validate"))
+    pcfg.add_argument("--force", action="store_true", help="(init) overwrite an existing file")
+    pcfg.set_defaults(func=_cmd_config)
 
     # quickstart — zero-config "is this thing on?"
     pq = sub.add_parser("quickstart", help="download TinyLlama + run a sample completion")

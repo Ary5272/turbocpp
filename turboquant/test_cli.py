@@ -650,6 +650,42 @@ def test_main_module_does_not_hijack_subcommand(monkeypatch):
     assert captured == [["doctor"]]
 
 
+def test_config_subcommands(tmp_path, monkeypatch, capsys):
+    """`turbocpp config init / show / path / validate` round-trip."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    from turboquant.cli import main
+
+    # path
+    rc = main(["config", "path"])
+    assert rc == 0
+    out = capsys.readouterr().out.strip()
+    assert "config.toml" in out
+
+    # init (no file → wrote)
+    rc = main(["config", "init"])
+    assert rc == 0
+    expected = tmp_path / "turbocpp" / "config.toml"
+    assert expected.is_file()
+
+    # init (no --force → refuse)
+    rc = main(["config", "init"])
+    assert rc == 2
+
+    # init --force (overwrite)
+    rc = main(["config", "init", "--force"])
+    assert rc == 0
+
+    # show
+    rc = main(["config", "show"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "[defaults]" in out and "[models]" in out
+
+    # validate
+    rc = main(["config", "validate"])
+    assert rc == 0
+
+
 def test_doctor_no_network_flag_parsed():
     """Argparse must accept `doctor --no-network` (offline-mode flag)."""
     from turboquant.cli import main
