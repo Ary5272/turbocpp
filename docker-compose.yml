@@ -13,7 +13,9 @@ services:
       - ./models:/models
     profiles: [tools]
 
-  # OpenAI-compatible HTTP API on http://localhost:8080
+  # OpenAI-compatible HTTP API on http://localhost:8080.
+  # The image's ENTRYPOINT is already `turbocpp serve --host 0.0.0.0 --port 8080`,
+  # so `command:` only needs to add the model + any tweaks.
   server:
     build:
       context: .
@@ -24,13 +26,9 @@ services:
     volumes:
       - ./models:/models
     command:
-      - --host
-      - 0.0.0.0
-      - --port
-      - "8080"
       - -m
       - /models/model.gguf
-      - --ctx-size
+      - --ctx
       - "4096"
     profiles: [server]
 
