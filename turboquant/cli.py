@@ -930,16 +930,23 @@ def _cmd_list_models(args) -> int:
             for k, v in aliases.items():
                 print(f"  {k:<20}  {v}")
         else:
-            print("# (no aliases configured — see SECURITY.md / config.py docstring)")
+            print("# (no aliases configured - see config.py docstring)")
         print()
         if cache_files:
             print(f"# cached GGUFs in {cache}:")
             for p in cache_files:
-                size = p.stat().st_size / 1e9
-                print(f"  {size:5.2f} GB  {p}")
+                print(f"  {_human_size(p.stat().st_size):>9}  {p}")
         else:
-            print(f"# (no GGUFs in {cache} — fetch one with `turbocpp download REPO FILE`)")
+            print(f"# (no GGUFs in {cache} - fetch one with `turbocpp download REPO FILE`)")
     return 0
+
+
+def _human_size(n_bytes: int) -> str:
+    """Format byte count as KB/MB/GB to one decimal."""
+    for unit, scale in (("GB", 1e9), ("MB", 1e6), ("KB", 1e3)):
+        if n_bytes >= scale:
+            return f"{n_bytes / scale:.1f} {unit}"
+    return f"{n_bytes} B"
 
 
 def _cmd_list_templates(args) -> int:
