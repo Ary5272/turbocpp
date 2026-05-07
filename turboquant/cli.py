@@ -238,6 +238,14 @@ def _sampling_kwargs(args) -> dict:
     return out
 
 
+def _stop_list(args) -> list[str] | None:
+    """Filter out empty stop strings (`--stop ""` is a no-op the user
+    likely didn't intend) and return None when nothing's left."""
+    raw = getattr(args, "stop", None) or []
+    cleaned = [s for s in raw if s]
+    return cleaned or None
+
+
 def _resolve_prompt(args) -> str:
     """generate accepts --prompt, --prompt-file, or stdin. This picks
     whichever is provided (precedence: -p > -f > stdin)."""
@@ -273,7 +281,7 @@ def _cmd_generate(args) -> int:
             prompt,
             max_tokens=args.n_predict,
             **sampler,
-            stop=args.stop or None,
+            stop=_stop_list(args),
             grammar=grammar,
             logprobs=args.logprobs,
             echo=False,
@@ -298,7 +306,7 @@ def _cmd_generate(args) -> int:
             prompt,
             max_tokens=args.n_predict,
             **sampler,
-            stop=args.stop or None,
+            stop=_stop_list(args),
             grammar=grammar,
             echo=False,
             stream=True,
@@ -504,7 +512,7 @@ def _cmd_chat(args) -> int:
                 messages=msgs,
                 max_tokens=args.n_predict,
                 **chat_sampler,
-                stop=args.stop or None,
+                stop=_stop_list(args),
                 grammar=grammar,
                 stream=True,
             ):
