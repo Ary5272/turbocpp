@@ -626,6 +626,10 @@ def _cmd_speculative(args) -> int:
     # cache, then bind-mounted into the container like any local path.
     target_p = Path(resolve_model(args.model)).resolve()
     draft_p = Path(resolve_model(args.draft)).resolve()
+    for label, p in (("target (-m)", target_p), ("draft (-d)", draft_p)):
+        if not p.is_file():
+            print(f"error: {label} not found: {p}", file=sys.stderr)
+            return 2
     if target_p.parent != draft_p.parent:
         print("note: target and draft live in different dirs; mounting both", file=sys.stderr)
 
