@@ -531,8 +531,7 @@ def _cmd_chat(args) -> int:
         dt = _time.time() - t0
         if reply and dt > 0.05:
             print(
-                f"\n[~{n_chunks} chunks in {dt:.2f}s "
-                f"-> {n_chunks / max(dt, 1e-3):.1f} chunk/s]",
+                f"\n[~{n_chunks} chunks in {dt:.2f}s -> {n_chunks / max(dt, 1e-3):.1f} chunk/s]",
                 file=sys.stderr,
             )
         msgs.append({"role": "assistant", "content": reply})
