@@ -678,6 +678,8 @@ def _cmd_speculative(args) -> int:
     ]
     if args.threads:
         forwarded += ["-t", str(args.threads)]
+    if getattr(args, "n_gpu_layers", 0):
+        forwarded += ["-ngl", str(args.n_gpu_layers)]
     return run_tool(
         "llama-speculative", forwarded, image=args.image or DEFAULT_IMAGE, mounts=mounts
     )
@@ -1361,6 +1363,14 @@ def main(argv=None) -> int:
     )
     psp.add_argument("--ctx", type=int, default=2048)
     psp.add_argument("--threads", type=int, default=0)
+    psp.add_argument(
+        "-ngl",
+        "--n-gpu-layers",
+        type=int,
+        default=0,
+        metavar="N",
+        help="forwarded as `-ngl N` to llama-speculative (needs a GPU image, e.g. --image :full-cuda)",
+    )
     psp.add_argument("--image", default=None, help="override llama.cpp image tag (e.g. :full-cuda)")
     psp.set_defaults(func=_cmd_speculative)
 
