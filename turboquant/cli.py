@@ -329,8 +329,7 @@ def _cmd_chat(args) -> int:
             print(f"(history save failed: {e})", file=sys.stderr)
 
     print(
-        "turbocpp chat — slash cmds: /help /quit /reset /save P /load P /multi /history /system TEXT\n"
-        f"history: {history_file}",
+        f"turbocpp chat - type /help for commands, /quit to exit\nhistory: {history_file}",
         file=sys.stderr,
     )
 
