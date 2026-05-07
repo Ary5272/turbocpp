@@ -172,6 +172,56 @@ def test_llama_tools_list_complete():
     assert expected.issubset(set(LLAMA_TOOLS))
 
 
+@pytest.mark.parametrize(
+    "args_obj,expected",
+    [
+        # All defaults: only temperature/top_p forwarded.
+        (
+            type(
+                "A",
+                (),
+                {
+                    "temperature": 0.7,
+                    "top_p": 0.95,
+                    "top_k": 0,
+                    "min_p": 0.0,
+                    "repeat_penalty": 0.0,
+                },
+            ),
+            {"temperature": 0.7, "top_p": 0.95},
+        ),
+        # All set.
+        (
+            type(
+                "A",
+                (),
+                {
+                    "temperature": 0.5,
+                    "top_p": 0.9,
+                    "top_k": 40,
+                    "min_p": 0.05,
+                    "repeat_penalty": 1.1,
+                },
+            ),
+            {
+                "temperature": 0.5,
+                "top_p": 0.9,
+                "top_k": 40,
+                "min_p": 0.05,
+                "repeat_penalty": 1.1,
+            },
+        ),
+        # No attributes at all - returns empty dict.
+        (type("A", (), {}), {}),
+    ],
+)
+def test_sampling_kwargs(args_obj, expected):
+    """_sampling_kwargs only forwards knobs the user actually set."""
+    from turboquant.cli import _sampling_kwargs
+
+    assert _sampling_kwargs(args_obj) == expected
+
+
 def test_cache_dir_respects_xdg_cache_home(tmp_path, monkeypatch):
     """cache_dir() should follow XDG_CACHE_HOME like every other helper."""
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
