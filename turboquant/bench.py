@@ -80,18 +80,51 @@ def heavy_tailed_weight(n_rows: int = 4096, n_cols: int = 4096, seed: int = 0) -
     return W
 
 
-def run_bench(seed: int = 0) -> None:
+def _measure_rows(seed: int) -> list[tuple[QuantStats, QuantStats]]:
+    W = heavy_tailed_weight(seed=seed)
+    return [
+        (measure(W, bits=b, rotated=False), measure(W, bits=b, rotated=True)) for b in (4, 3, 2)
+    ]
+
+
+def run_bench(seed: int = 0, fmt: str = "text") -> None:
+    """Print rotation/quant MSE comparison. fmt='text' (human) or 'json'."""
+    rows = _measure_rows(seed)
+
+    if fmt == "json":
+        import json
+
+        out = {
+            "seed": seed,
+            "shape": [4096, 4096],
+            "rows": [
+                {
+                    "bits": int(b.fmt[-1]),
+                    "baseline": {
+                        "fmt": b.fmt,
+                        "bpw": b.bits,
+                        "mse": b.mse,
+                        "max_abs_err": b.max_abs_err,
+                    },
+                    "rotated": {
+                        "fmt": r.fmt,
+                        "bpw": r.bits,
+                        "mse": r.mse,
+                        "max_abs_err": r.max_abs_err,
+                    },
+                }
+                for b, r in rows
+            ],
+        }
+        print(json.dumps(out, indent=2))
+        return
+
     print("== TurboQuant rotation effect on quantization error ==")
     print("Synthetic weight: 4096×4096 with ~5σ tail outliers\n")
-    W = heavy_tailed_weight(seed=seed)
 
     print(f"{'format':<12}{'bpw':>6}{'MSE':>14}{'max|err|':>12}{'speedup hint':>20}")
     print("-" * 64)
-    rows = []
-    for bits in (4, 3, 2):
-        s_base = measure(W, bits=bits, rotated=False)
-        s_rot = measure(W, bits=bits, rotated=True)
-        rows.append((s_base, s_rot))
+    for s_base, s_rot in rows:
         # speedup hint: roughly bytes ratio at decode time vs Q4 baseline
         speedup_base = 4.625 / s_base.bits  # treat Q4_K_M ~4.625 bpw as ref
         speedup_rot = 4.625 / s_rot.bits

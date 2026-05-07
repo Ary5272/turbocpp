@@ -63,7 +63,7 @@ def _cmd_rotate(args) -> int:
 def _cmd_bench(args) -> int:
     from .bench import run_bench
 
-    run_bench(seed=args.seed)
+    run_bench(seed=args.seed, fmt=getattr(args, "format", "text"))
     return 0
 
 
@@ -1104,6 +1104,12 @@ def main(argv=None) -> int:
     # bench
     pb = sub.add_parser("bench", help="synthetic rotation/quant MSE microbench")
     pb.add_argument("--seed", type=int, default=0)
+    pb.add_argument(
+        "--format",
+        choices=("text", "json"),
+        default="text",
+        help="output format (json is machine-readable; text is the default report)",
+    )
     pb.set_defaults(func=_cmd_bench)
 
     # generate

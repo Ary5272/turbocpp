@@ -407,23 +407,19 @@ def test_rm_model_dry_run_handles_empty_cache(monkeypatch, tmp_path, capsys):
 
 def test_runtime_probe_torch_status_handles_missing(monkeypatch):
     """torch_status should report installed=False without raising when
-    torch isn't installed (rotation-only consumers).
+    torch isn't installed.
+
+    Implementation: assign sys.modules['torch'] = None - Python's import
+    system treats that as 'definitely unavailable' and raises
+    ModuleNotFoundError on `import torch`. monkeypatch.setitem auto-restores
+    the real entry on test teardown, so other tests that genuinely need
+    torch are unaffected. We deliberately do NOT call `del sys.modules['torch']`
+    or re-import torch from scratch - that triggers RuntimeError because
+    torch's C-extension module-init code is not idempotent.
     """
     import sys
 
-    # Wipe any cached torch module + block its import.
-    for k in list(sys.modules):
-        if k == "torch" or k.startswith("torch."):
-            del sys.modules[k]
-
-    real_import = __import__
-
-    def guard(name, *a, **kw):
-        if name == "torch" or name.startswith("torch."):
-            raise ImportError(f"simulated: {name}")
-        return real_import(name, *a, **kw)
-
-    monkeypatch.setattr("builtins.__import__", guard)
+    monkeypatch.setitem(sys.modules, "torch", None)
 
     from turboquant.runtime_probe import torch_status
 
