@@ -6,6 +6,10 @@ from `git tag` + commit subjects (see `scripts/gen_changelog.sh`).
 
 ## [Unreleased]
 
+## [v0.31.0] - 2026-05-07
+
+chat --history PATH override + image_present timeout
+
 ## [v0.30.1] - 2026-05-07
 
 image_present timeout to prevent doctor/info hang on stuck docker daemon
