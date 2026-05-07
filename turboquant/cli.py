@@ -452,16 +452,22 @@ def _cmd_doctor(args) -> int:
 
     info = collect_runtime_topology()
     fails = 0
+    # Suppress ANSI escapes when stdout isn't a TTY (e.g. piped to a file
+    # or grep) - colored escapes confuse downstream parsers.
+    use_color = sys.stdout.isatty() and not getattr(args, "no_color", False)
 
     def row(status, label, detail=""):
         nonlocal fails
         if status == "FAIL":
             fails += 1
-        col = {
-            "PASS": "\033[32mPASS\033[0m",
-            "WARN": "\033[33mWARN\033[0m",
-            "FAIL": "\033[31mFAIL\033[0m",
-        }.get(status, status)
+        if use_color:
+            col = {
+                "PASS": "\033[32mPASS\033[0m",
+                "WARN": "\033[33mWARN\033[0m",
+                "FAIL": "\033[31mFAIL\033[0m",
+            }.get(status, status)
+        else:
+            col = status
         print(f"  [{col}]  {label:<38} {detail}")
 
     print(f"turbocpp {info['turbocpp']} doctor — {sys.platform}")
@@ -1413,6 +1419,9 @@ def main(argv=None) -> int:
         "--no-network",
         action="store_true",
         help="skip the HF wheel-URL HEAD probe (offline / air-gapped)",
+    )
+    pd.add_argument(
+        "--no-color", action="store_true", help="disable ANSI color in PASS/WARN/FAIL"
     )
     pd.set_defaults(func=_cmd_doctor)
 
