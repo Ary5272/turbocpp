@@ -1260,9 +1260,17 @@ def main(argv=None) -> int:
     psp = sub.add_parser(
         "speculative", help="speculative decoding: small draft + big target (1.5-3x faster)"
     )
-    psp.add_argument("-m", "--model", required=True, help="target GGUF (the real model)")
     psp.add_argument(
-        "-d", "--draft", required=True, help="draft GGUF (smaller/faster, same family)"
+        "-m",
+        "--model",
+        required=True,
+        help="target GGUF | alias | hf://owner/repo/file.gguf | owner/repo:file.gguf",
+    )
+    psp.add_argument(
+        "-d",
+        "--draft",
+        required=True,
+        help="draft GGUF | alias | hf://owner/repo/file.gguf | owner/repo:file.gguf",
     )
     psp.add_argument("-p", "--prompt", required=True)
     psp.add_argument("-n", "--n-predict", type=int, default=128)
