@@ -551,8 +551,15 @@ def _cmd_speculative(args) -> int:
     from pathlib import Path
 
     from .config import resolve_model
-    from .llama_docker import DEFAULT_IMAGE, run_tool
+    from .llama_docker import DEFAULT_IMAGE, docker_available, run_tool
 
+    if not docker_available():
+        print(
+            "error: speculative decoding delegates to llama-speculative "
+            "in ggml-org/llama.cpp:full. Install Docker first.",
+            file=sys.stderr,
+        )
+        return 2
     # HF refs (`owner/repo:file.gguf` or `hf://...`) are downloaded to the
     # cache, then bind-mounted into the container like any local path.
     target_p = Path(resolve_model(args.model)).resolve()
@@ -832,11 +839,19 @@ def _cmd_quickstart(args) -> int:
 
 def _cmd_llama_passthrough(args) -> int:
     """Forward to a binary in ggml-org's official llama.cpp image."""
-    from .llama_docker import DEFAULT_IMAGE, LLAMA_TOOLS, run_tool
+    from .llama_docker import DEFAULT_IMAGE, LLAMA_TOOLS, docker_available, run_tool
 
     tool = getattr(args, "_tool", None) or args.tool
     if tool not in LLAMA_TOOLS:
         print(f"unknown tool {tool!r}; choose from {LLAMA_TOOLS}", file=sys.stderr)
+        return 2
+    if not docker_available():
+        print(
+            f"error: `turbocpp {tool}` needs Docker (we delegate to "
+            f"ggml-org/llama.cpp:full). Install Docker Desktop or the "
+            f"`docker` CLI, then re-run.",
+            file=sys.stderr,
+        )
         return 2
 
     # Default Q4_K_M when `turbocpp quantize IN OUT` is called with only
