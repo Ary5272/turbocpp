@@ -6,6 +6,10 @@ from `git tag` + commit subjects (see `scripts/gen_changelog.sh`).
 
 ## [Unreleased]
 
+## [v0.29.0] - 2026-05-07
+
+_build_grammar conflict warning + tests
+
 ## [v0.28.0] - 2026-05-07
 
 pick-wheel --py / --variant overrides
