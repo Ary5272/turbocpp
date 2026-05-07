@@ -558,10 +558,9 @@ def _cmd_rm_model(args) -> int:
             print(f"no match for {args.names}", file=sys.stderr)
             return 1
 
-    # Dedupe (rglob with identical patterns can return the same path twice
-    # when a name matches via multiple cache subtrees).
-    seen: set[Path] = set()
-    files = [f for f in files if not (f in seen or seen.add(f))]
+    # Dedupe while preserving order (rglob with identical patterns can
+    # return the same path twice when a name matches multiple subtrees).
+    files = list(dict.fromkeys(files))
 
     if args.dry_run:
         for p in files:
