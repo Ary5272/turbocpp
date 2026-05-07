@@ -277,7 +277,7 @@ def _cmd_chat(args) -> int:
 
     History lives at ~/.cache/turbocpp/chat-<sha1(model_path)>.json so
     the next `turbocpp chat -m same.gguf` resumes the same conversation.
-    Slash commands:  /reset (clear)  /save PATH  /load PATH  /quit"""
+    Type `/help` inside the REPL for the slash-command list."""
     err = _import_llama_cpp()
     if err:
         print(err, file=sys.stderr)
