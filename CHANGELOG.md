@@ -6,6 +6,10 @@ from `git tag` + commit subjects (see `scripts/gen_changelog.sh`).
 
 ## [Unreleased]
 
+## [v0.25.0] - 2026-05-07
+
+info --field for scriptable scalar extraction
+
 ## [v0.24.0] - 2026-05-07
 
 _stop_list helper, _human_size, list-models KB/MB/GB

@@ -35,7 +35,7 @@ def _cmd_rotate(args) -> int:
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
     except ImportError:
-        sys.exit("rotate needs:  pip install torch transformers safetensors")
+        sys.exit("rotate needs:  pip install 'turbocpp[rotate]'")
 
     from . import rotate_llama_model
 

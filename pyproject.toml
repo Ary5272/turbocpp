@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "turbocpp"
-version = "0.25.0"
+version = "0.26.0"
 description = "llama.cpp + TurboQuant — Hadamard-rotation preprocessor for LLM weights, plus a unified CLI on top of llama-cpp-python"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -23,22 +23,28 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
-# Core deps. Inference deps are kept optional via [runtime] so a
-# rotation-only install stays small.
+# Core deps - intentionally tiny. The inference engine (llama-cpp-python)
+# and the rotation deps (torch + transformers) are optional extras so a
+# rotation-only install stays small AND a CLI-tools-only install (e.g.
+# `turbocpp doctor`, `turbocpp llama list`, `turbocpp pick-wheel`) needs
+# only stdlib + huggingface_hub.
 dependencies = [
-    "torch>=2.0",
-    "transformers>=4.40",
-    "safetensors>=0.4",
-    "numpy>=1.24",
     "huggingface_hub>=0.24,<2.0",
 ]
 
 [project.optional-dependencies]
-# Pulls in llama-cpp-python (the actual inference engine). Use:
-#   pip install turbocpp[runtime]
+# Inference engine. Use:  pip install 'turbocpp[runtime]'
 runtime = ["llama-cpp-python>=0.3.2"]
+# Offline Hadamard rotation pipeline. Use:  pip install 'turbocpp[rotate]'
+rotate = [
+    "torch>=2.0",
+    "transformers>=4.40",
+    "safetensors>=0.4",
+    "numpy>=1.24",
+]
 dev = ["pytest>=7.0", "ruff>=0.5", "mypy>=1.10", "build>=1.0", "twine>=5.0"]
 demo = ["gradio>=4.40,<7.0", "matplotlib>=3.7", "pillow>=10.0"]
+all = ["turbocpp[runtime,rotate]"]
 
 [project.scripts]
 # Unified CLI — `turbocpp <subcommand>` is the canonical name; the

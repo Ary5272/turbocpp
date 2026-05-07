@@ -21,12 +21,22 @@
 
 ## Install
 
+The base install is intentionally tiny (just `huggingface_hub`). Extras
+opt you into heavier deps:
+
+| install command | what you get | size |
+|---|---|---|
+| `pip install turbocpp`                | CLI tools only — `pick-wheel`, `info`, `doctor`, `download`, `list-models`, `llama list`. No inference, no rotation. | ~5 MB |
+| `pip install 'turbocpp[runtime]'`     | Adds `llama-cpp-python` — `generate`, `chat`, `serve`, `embed`, `tokenize`, `quickstart`. | ~5 MB + 100-300 MB depending on wheel |
+| `pip install 'turbocpp[rotate]'`      | Adds `torch + transformers` — the offline `rotate` pipeline. | ~5 MB + ~2 GB |
+| `pip install 'turbocpp[all]'`         | Both runtime and rotate.                                                                                              | ~2.3 GB |
+
 ```bash
-# From PyPI (recommended — pulls llama-cpp-python source build via [runtime]):
+# Most users want this:
 pip install 'turbocpp[runtime]'
 
-# If your CPU/OS lacks a build toolchain, skip [runtime] and install
-# llama-cpp-python from a prebuilt wheel matched to this host:
+# If your CPU/OS lacks a build toolchain, install llama-cpp-python from
+# a prebuilt wheel instead of the [runtime] source build:
 pip install turbocpp
 pip install $(turbocpp pick-wheel)
 
