@@ -1202,8 +1202,15 @@ def main(argv=None) -> int:
     sub = p.add_subparsers(dest="cmd", required=True)
 
     # rotate
-    pr = sub.add_parser("rotate", help="apply Hadamard rotation to a HF model")
-    pr.add_argument("model_dir", type=Path, help="HF model directory")
+    pr = sub.add_parser(
+        "rotate",
+        help="apply Hadamard rotation to a HF model (offline TurboQuant prep)",
+    )
+    pr.add_argument(
+        "model_dir",
+        type=Path,
+        help="HF model directory (or repo id - transformers will auto-download)",
+    )
     pr.add_argument("out_dir", type=Path, help="output directory")
     pr.add_argument("--block", type=int, default=128, help="Hadamard block size (power of 2)")
     pr.add_argument(
