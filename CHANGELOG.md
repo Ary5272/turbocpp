@@ -6,6 +6,10 @@ from `git tag` + commit subjects (see `scripts/gen_changelog.sh`).
 
 ## [Unreleased]
 
+## [v0.11.4] - 2026-05-06
+
+chore: regen CHANGELOG.md for v0.11.4
+
 ## [v0.11.3] - 2026-05-06
 
 chore: regen CHANGELOG.md for v0.11.3
