@@ -1654,7 +1654,10 @@ def main(argv=None) -> int:
 
     # doctor (one-shot environment check)
     pd = sub.add_parser(
-        "doctor", help="check turbocpp install health (deps, wheels, docker, GPU, ...)"
+        "doctor",
+        help="check turbocpp install health (deps, wheels, docker, GPU, ...)",
+        description="Walk a checklist and print PASS / WARN / FAIL per item. "
+        "Exit code = number of FAILs (suitable for shell scripts).",
     )
     pd.add_argument(
         "--no-network",
