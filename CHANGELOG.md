@@ -6,6 +6,10 @@ from `git tag` + commit subjects (see `scripts/gen_changelog.sh`).
 
 ## [Unreleased]
 
+## [v0.19.0] - 2026-05-07
+
+--top-k / --min-p / --repeat-penalty for generate+chat (via _sampling_kwargs)
+
 ## [v0.18.0] - 2026-05-06
 
 cache_dir/state_dir refactor + CPU-only -ngl warning + ci timeouts
