@@ -6,6 +6,10 @@ from `git tag` + commit subjects (see `scripts/gen_changelog.sh`).
 
 ## [Unreleased]
 
+## [v0.22.0] - 2026-05-07
+
+rotate --overwrite guard against accidental clobber
+
 ## [v0.21.0] - 2026-05-07
 
 doctor README example, build-arg fix, sha256 paste-tolerance, chat-history test
