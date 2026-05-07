@@ -19,9 +19,6 @@ import argparse
 import sys
 from pathlib import Path
 
-# argparse is imported above; re-exported under a top-level alias for the
-# REMAINDER constant we reference deeper in the parser definition.
-
 
 # ---------------------------------------------------------------------------
 # rotate (delegates to the existing Python module — no behavior change)
