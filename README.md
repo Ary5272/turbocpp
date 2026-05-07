@@ -138,13 +138,13 @@ docker run --rm -v ~/models:/models ghcr.io/ary5272/turbocpp:turboquant \
 ```
 
 A new image is pushed to GHCR on every `main` commit and every `v*` tag
-([docker.yml](.github/workflows/docker.yml)). Build locally with a
-different CPU baseline:
+([docker.yml](.github/workflows/docker.yml)). Build locally pointing at
+a different prebuilt wheel (e.g. AVX-512 / VNNI / Sapphire Rapids):
 
 ```bash
 docker build --target cpu \
-    --build-arg LLAMA_CMAKE_FLAGS="-DGGML_NATIVE=OFF -DGGML_AVX512=ON -DGGML_AVX2=ON -DGGML_FMA=ON -DGGML_F16C=ON" \
-    -t turbocpp:cpu-avx512 .
+    --build-arg LLAMA_CPP_WHEEL_URL="$(turbocpp pick-wheel --gpu cuda12)" \
+    -t turbocpp:cpu-cuda12 .
 ```
 
 ```
