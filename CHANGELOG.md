@@ -6,6 +6,10 @@ from `git tag` + commit subjects (see `scripts/gen_changelog.sh`).
 
 ## [Unreleased]
 
+## [v0.28.0] - 2026-05-07
+
+pick-wheel --py / --variant overrides
+
 ## [v0.27.0] - 2026-05-07
 
 chat readline up-arrow + ctrl-R search
