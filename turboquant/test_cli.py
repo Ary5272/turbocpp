@@ -623,6 +623,43 @@ def test_main_module_does_not_hijack_subcommand(monkeypatch):
     assert captured == [["doctor"]]
 
 
+def test_doctor_no_network_flag_parsed():
+    """Argparse must accept `doctor --no-network` (offline-mode flag)."""
+    from turboquant.cli import main
+
+    rc = main(["doctor", "--no-network"])
+    # rc is the number of FAILs; with --no-network the wheel-URL check
+    # is skipped so it can't FAIL on network. Other checks (python, cpu)
+    # are environment-dependent — just assert it ran without TypeError.
+    assert isinstance(rc, int)
+
+
+def test_download_accepts_combined_ref(monkeypatch, tmp_path):
+    """`turbocpp download owner/repo:file.gguf` should split into two
+    args before calling hf_hub_download."""
+    import sys
+    import types
+
+    calls = {}
+
+    def fake_dl(repo_id, filename, cache_dir, **kw):
+        calls["repo_id"] = repo_id
+        calls["filename"] = filename
+        return str(tmp_path / "x.gguf")
+
+    fake_hub = types.ModuleType("huggingface_hub")
+    fake_hub.hf_hub_download = fake_dl  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "huggingface_hub", fake_hub)
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+
+    from turboquant.cli import main
+
+    rc = main(["download", "owner/repo:file.gguf"])
+    assert rc == 0
+    assert calls["repo_id"] == "owner/repo"
+    assert calls["filename"] == "file.gguf"
+
+
 def test_main_module_rotate_back_compat(monkeypatch):
     """The pre-0.3 form `python -m turboquant <model_dir> <out_dir>` is
     still rewritten to `rotate <model_dir> <out_dir>`."""
