@@ -615,7 +615,7 @@ def test_runtime_probe_keys_are_stable():
     assert expected.issubset(info.keys()), f"missing keys: {expected - info.keys()}"
 
 
-def test_open_llama_passes_n_gpu_layers(monkeypatch):
+def test_open_llama_passes_n_gpu_layers(monkeypatch, tmp_path):
     """_open_llama should forward --n-gpu-layers when set, omit when 0.
 
     Works whether or not llama_cpp is actually installed: we install a
@@ -638,11 +638,15 @@ def test_open_llama_passes_n_gpu_layers(monkeypatch):
 
     monkeypatch.setattr(_cfg, "resolve_model", lambda x: x)
 
+    # _open_llama now pre-checks the model_path exists. Create a fake file.
+    fake_gguf = tmp_path / "x.gguf"
+    fake_gguf.write_bytes(b"")
+
     from turboquant.cli import _open_llama
 
     # --- skip case (ngl=0)
     class A0:
-        model = "x.gguf"
+        model = str(fake_gguf)
         ctx = 512
         threads = 0
         seed = 0
@@ -655,7 +659,7 @@ def test_open_llama_passes_n_gpu_layers(monkeypatch):
 
     # --- include case (ngl=99)
     class A1:
-        model = "x.gguf"
+        model = str(fake_gguf)
         ctx = 512
         threads = 0
         seed = 0
@@ -663,6 +667,33 @@ def test_open_llama_passes_n_gpu_layers(monkeypatch):
 
     _open_llama(A1)
     assert captured.get("n_gpu_layers") == 99
+
+
+def test_open_llama_friendly_error_when_model_missing(monkeypatch):
+    """Missing model should raise SystemExit naming the path - not
+    llama_cpp's opaque internal 'failed to load' error."""
+    import sys
+    import types
+
+    fake_mod = types.ModuleType("llama_cpp")
+    fake_mod.Llama = type("Llama", (), {})  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "llama_cpp", fake_mod)
+    import turboquant.config as _cfg
+
+    monkeypatch.setattr(_cfg, "resolve_model", lambda x: x)
+
+    from turboquant.cli import _open_llama
+
+    class A:
+        model = "/no/such/model.gguf"
+        ctx = 512
+        threads = 0
+        seed = 0
+        n_gpu_layers = 0
+
+    with pytest.raises(SystemExit) as e:
+        _open_llama(A)
+    assert "/no/such/model.gguf" in str(e.value)
 
 
 def test_generate_jsonl_format_flag_parsed():

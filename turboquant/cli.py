@@ -159,8 +159,22 @@ def _open_llama(args, **overrides):
 
     from .config import resolve_model
 
+    model_path = resolve_model(args.model)
+    # Pre-check existence so the user gets `error: model not found: <path>`
+    # rather than llama_cpp's opaque `failed to load model from` error.
+    # (We skip this check for non-path model names that resolve_model
+    # might've passed through unchanged - those will error inside Llama().)
+    from pathlib import Path
+
+    p = Path(model_path)
+    if not p.exists():
+        raise SystemExit(
+            f"error: model not found: {p}\n"
+            f"  (tried: '{args.model}' -> '{model_path}')\n"
+            f"  hint: `turbocpp list-models` shows aliases + cached GGUFs"
+        )
     kwargs = dict(
-        model_path=resolve_model(args.model),
+        model_path=str(p),
         n_ctx=getattr(args, "ctx", 2048),
         n_threads=getattr(args, "threads", 0) or None,
         seed=getattr(args, "seed", 0) if getattr(args, "seed", 0) != 0 else -1,
