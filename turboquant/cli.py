@@ -1185,8 +1185,19 @@ def _cmd_serve(args) -> int:
         ssettings_kwargs["api_key"] = api_key
     server_settings = ServerSettings(**ssettings_kwargs)
 
+    model_path = resolve_model(args.model)
+    from pathlib import Path
+
+    if not Path(model_path).exists():
+        print(
+            f"error: model not found: {model_path}\n"
+            f"  (tried: '{args.model}' -> '{model_path}')\n"
+            f"  hint: `turbocpp list-models` shows aliases + cached GGUFs",
+            file=sys.stderr,
+        )
+        return 2
     ms_kwargs: dict = dict(
-        model=resolve_model(args.model),
+        model=model_path,
         n_ctx=args.ctx,
         n_threads=args.threads or 0,
     )
