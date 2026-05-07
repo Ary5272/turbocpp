@@ -215,6 +215,25 @@ def test_llama_tools_list_complete():
         (type("A", (), {}), {}),
     ],
 )
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        (None, None),
+        ([], None),
+        ([""], None),  # filter empty
+        (["", ""], None),
+        (["</s>"], ["</s>"]),
+        (["", "STOP", ""], ["STOP"]),
+    ],
+)
+def test_stop_list(raw, expected):
+    """_stop_list drops empty strings + collapses to None when empty."""
+    from turboquant.cli import _stop_list
+
+    args = type("A", (), {"stop": raw})
+    assert _stop_list(args) == expected
+
+
 def test_sampling_kwargs(args_obj, expected):
     """_sampling_kwargs only forwards knobs the user actually set."""
     from turboquant.cli import _sampling_kwargs
