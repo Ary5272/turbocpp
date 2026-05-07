@@ -118,13 +118,20 @@ def _build_grammar(args):
 
     from llama_cpp import LlamaGrammar  # type: ignore
 
-    if getattr(args, "grammar", None):
+    has_grammar = bool(getattr(args, "grammar", None))
+    has_schema = bool(getattr(args, "json_schema", None))
+    if has_grammar and has_schema:
+        print(
+            "[turbocpp] warning: --grammar and --json-schema both set; using --grammar",
+            file=sys.stderr,
+        )
+    if has_grammar:
         path = Path(args.grammar)
         if not path.is_file():
             raise SystemExit(f"--grammar: file not found: {path}")
         text = path.read_text(encoding="utf-8")
         return LlamaGrammar.from_string(text)
-    if getattr(args, "json_schema", None):
+    if has_schema:
         import json as _json
 
         path = Path(args.json_schema)
