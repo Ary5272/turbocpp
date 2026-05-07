@@ -746,7 +746,9 @@ def _cmd_list_models(args) -> int:
             json.dumps(
                 {
                     "aliases": aliases,
-                    "cache": [str(p) for p in cache_files],
+                    "cache": [
+                        {"path": str(p), "size_bytes": p.stat().st_size} for p in cache_files
+                    ],
                 },
                 indent=2,
             )
