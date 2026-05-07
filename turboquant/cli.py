@@ -394,6 +394,13 @@ def _cmd_chat(args) -> int:
         except OSError as e:
             print(f"(history save failed: {e})", file=sys.stderr)
 
+    # Wire readline (stdlib on POSIX, missing on Windows) so the user gets
+    # up-arrow recall + ctrl-R search inside the REPL.
+    try:
+        import readline  # noqa: F401
+    except ImportError:
+        pass  # Windows; chat still works, just without line editing.
+
     print(
         f"turbocpp chat - type /help for commands, /quit to exit\nhistory: {history_file}",
         file=sys.stderr,
