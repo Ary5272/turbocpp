@@ -172,6 +172,23 @@ def test_llama_tools_list_complete():
     assert expected.issubset(set(LLAMA_TOOLS))
 
 
+def test_default_image_env_override(monkeypatch):
+    """TURBOCPP_LLAMA_IMAGE should override the baked-in default."""
+    monkeypatch.setenv("TURBOCPP_LLAMA_IMAGE", "ghcr.io/ggml-org/llama.cpp:full-cuda")
+    # llama_docker reads the env at module-import time; force a reimport.
+    import importlib
+
+    import turboquant.llama_docker as ld
+
+    importlib.reload(ld)
+    try:
+        assert ld.DEFAULT_IMAGE == "ghcr.io/ggml-org/llama.cpp:full-cuda"
+    finally:
+        # Restore so subsequent tests see the real default.
+        monkeypatch.delenv("TURBOCPP_LLAMA_IMAGE", raising=False)
+        importlib.reload(ld)
+
+
 def test_render_docker_cmd_well_formed(tmp_path):
     from turboquant.llama_docker import render_docker_cmd
 
