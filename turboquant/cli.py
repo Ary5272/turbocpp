@@ -669,9 +669,11 @@ def _cmd_embed(args) -> int:
         return 2
     import json
 
-    if args.input == "-" or not args.input:
-        sentences = [line.rstrip("\n") for line in sys.stdin if line.strip()]
-    else:
+    # Source-of-text precedence: --text > --input > piped stdin. The old
+    # code went stdin-first which made `embed --text 'hi'` block on a TTY.
+    if args.text:
+        sentences = [args.text]
+    elif args.input and args.input != "-":
         from pathlib import Path
 
         sentences = [
@@ -679,10 +681,12 @@ def _cmd_embed(args) -> int:
             for line in Path(args.input).read_text(encoding="utf-8").splitlines()
             if line.strip()
         ]
-    if not sentences and args.text:
-        sentences = [args.text]
+    elif not sys.stdin.isatty():
+        sentences = [line.rstrip("\n") for line in sys.stdin if line.strip()]
+    else:
+        sentences = []
     if not sentences:
-        print("nothing to embed (use --text or pipe lines on stdin)", file=sys.stderr)
+        print("nothing to embed (use --text TEXT, -i FILE, or pipe text on stdin)", file=sys.stderr)
         return 2
 
     llm = _open_llama(args, embedding=True)
