@@ -32,7 +32,7 @@ import subprocess
 import sys
 from collections.abc import Mapping, MutableMapping, Sequence
 
-DEFAULT_IMAGE = "ghcr.io/ggml-org/llama.cpp:full"
+DEFAULT_IMAGE = os.environ.get("TURBOCPP_LLAMA_IMAGE", "ghcr.io/ggml-org/llama.cpp:full")
 
 # All tools available inside the `full` image. Adding to this list also
 # auto-exposes them as `turbocpp <tool>` CLI subcommands.
