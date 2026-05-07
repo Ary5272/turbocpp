@@ -6,6 +6,10 @@ from `git tag` + commit subjects (see `scripts/gen_changelog.sh`).
 
 ## [Unreleased]
 
+## [v0.20.0] - 2026-05-07
+
+serve config defaults + sampling-test extension
+
 ## [v0.19.0] - 2026-05-07
 
 --top-k / --min-p / --repeat-penalty for generate+chat (via _sampling_kwargs)
