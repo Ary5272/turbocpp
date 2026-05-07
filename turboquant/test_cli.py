@@ -223,6 +223,23 @@ def test_sampling_kwargs(args_obj, expected):
 
 
 @pytest.mark.parametrize(
+    "n,expected",
+    [
+        (0, "0 B"),
+        (512, "512 B"),
+        (999, "999 B"),
+        (1024, "1.0 KB"),
+        (1_500_000, "1.5 MB"),
+        (4_625_000_000, "4.6 GB"),
+    ],
+)
+def test_human_size(n, expected):
+    from turboquant.cli import _human_size
+
+    assert _human_size(n) == expected
+
+
+@pytest.mark.parametrize(
     "raw,expected",
     [
         (None, None),
