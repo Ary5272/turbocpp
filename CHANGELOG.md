@@ -6,6 +6,10 @@ from `git tag` + commit subjects (see `scripts/gen_changelog.sh`).
 
 ## [Unreleased]
 
+## [v0.18.0] - 2026-05-06
+
+cache_dir/state_dir refactor + CPU-only -ngl warning + ci timeouts
+
 ## [v0.17.0] - 2026-05-06
 
 chat /help+/tokens, /save+/load polish, serve startup URL, speculative -ngl, rotate help, doctor color toggle
