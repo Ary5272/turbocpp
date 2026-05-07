@@ -466,6 +466,17 @@ def _cmd_doctor(args) -> int:
     g = info["gpu"]
     row("PASS" if g else "WARN", "GPU", g or "none detected (CPU-only)")
 
+    t = info["torch"]
+    if t.get("installed"):
+        bits = []
+        if t.get("cuda_available"):
+            bits.append("cuda")
+        if t.get("mps_available"):
+            bits.append("mps")
+        row("PASS", "torch (rotate)", f"{t.get('version')} ({', '.join(bits) or 'cpu'})")
+    else:
+        row("WARN", "torch (rotate)", "not installed - `pip install torch transformers`")
+
     # HF wheel mirror reachability — kept in doctor only since it costs network.
     if getattr(args, "no_network", False):
         row("WARN", "HF wheel URL reachable", "skipped (--no-network)")

@@ -23,6 +23,29 @@ def detect_gpu() -> str | None:
     return None
 
 
+def torch_status() -> dict[str, Any]:
+    """Probe the installed torch (used by `turbocpp rotate`)."""
+    out: dict[str, Any] = {}
+    try:
+        import torch  # type: ignore
+    except ImportError:
+        return {"installed": False}
+    out["installed"] = True
+    out["version"] = getattr(torch, "__version__", "?")
+    try:
+        out["cuda_available"] = bool(torch.cuda.is_available())
+    except Exception:
+        out["cuda_available"] = None
+    try:
+        # Apple Silicon Metal backend
+        out["mps_available"] = bool(
+            getattr(torch.backends, "mps", None) and torch.backends.mps.is_available()
+        )
+    except Exception:
+        out["mps_available"] = None
+    return out
+
+
 def llama_cpp_status() -> dict[str, Any]:
     """Probe the installed llama-cpp-python (or note its absence)."""
     out: dict[str, Any] = {}
@@ -59,5 +82,6 @@ def collect_runtime_topology() -> dict[str, Any]:
         "llama_image": DEFAULT_IMAGE,
         "llama_image_pulled": (image_present(DEFAULT_IMAGE) if docker_available() else False),
         "llama_cpp": llama_cpp_status(),
+        "torch": torch_status(),
         "gpu": detect_gpu(),
     }

@@ -405,6 +405,32 @@ def test_rm_model_dry_run_handles_empty_cache(monkeypatch, tmp_path, capsys):
     assert rc == 0
 
 
+def test_runtime_probe_torch_status_handles_missing(monkeypatch):
+    """torch_status should report installed=False without raising when
+    torch isn't installed (rotation-only consumers).
+    """
+    import sys
+
+    # Wipe any cached torch module + block its import.
+    for k in list(sys.modules):
+        if k == "torch" or k.startswith("torch."):
+            del sys.modules[k]
+
+    real_import = __import__
+
+    def guard(name, *a, **kw):
+        if name == "torch" or name.startswith("torch."):
+            raise ImportError(f"simulated: {name}")
+        return real_import(name, *a, **kw)
+
+    monkeypatch.setattr("builtins.__import__", guard)
+
+    from turboquant.runtime_probe import torch_status
+
+    s = torch_status()
+    assert s == {"installed": False}
+
+
 def test_runtime_probe_keys_are_stable():
     """info + doctor both depend on these keys; downstream JSON parsers
     might too — guard against accidental rename."""
@@ -421,6 +447,7 @@ def test_runtime_probe_keys_are_stable():
         "llama_image",
         "llama_image_pulled",
         "llama_cpp",
+        "torch",
         "gpu",
     }
     assert expected.issubset(info.keys()), f"missing keys: {expected - info.keys()}"
