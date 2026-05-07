@@ -6,6 +6,10 @@ from `git tag` + commit subjects (see `scripts/gen_changelog.sh`).
 
 ## [Unreleased]
 
+## [v0.16.0] - 2026-05-06
+
+download hf://, speculative pre-flight, CI per-job timeouts, Dockerfile libopenblas0 + sanity probe
+
 ## [v0.15.0] - 2026-05-06
 
 TURBOCPP_LLAMA_IMAGE override + doctor color/no-color + embed/tokenize TTY guard + speculative HF-ref help + grammar errors + Dockerfile sanity + docs
