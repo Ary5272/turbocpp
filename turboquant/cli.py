@@ -419,17 +419,22 @@ def _cmd_chat(args) -> int:
             save()
             continue
         if s.startswith("/save "):
-            target = Path(s[6:].strip())
-            if target.suffix.lower() == ".md":
-                target.write_text(_msgs_to_markdown(msgs), encoding="utf-8")
-            else:
-                target.write_text(json.dumps(msgs, indent=2), encoding="utf-8")
-            print(f"(saved to {target})", file=sys.stderr)
+            target = Path(os.path.expanduser(s[6:].strip()))
+            try:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                if target.suffix.lower() == ".md":
+                    target.write_text(_msgs_to_markdown(msgs), encoding="utf-8")
+                else:
+                    target.write_text(json.dumps(msgs, indent=2), encoding="utf-8")
+                print(f"(saved to {target})", file=sys.stderr)
+            except OSError as e:
+                print(f"(save failed: {e})", file=sys.stderr)
             continue
         if s.startswith("/load "):
+            target = Path(os.path.expanduser(s[6:].strip()))
             try:
-                msgs = json.loads(Path(s[6:].strip()).read_text(encoding="utf-8"))
-                print(f"(loaded {len(msgs)} messages)", file=sys.stderr)
+                msgs = json.loads(target.read_text(encoding="utf-8"))
+                print(f"(loaded {len(msgs)} messages from {target})", file=sys.stderr)
             except Exception as e:
                 print(f"(load failed: {e})", file=sys.stderr)
             continue
