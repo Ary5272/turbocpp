@@ -1095,6 +1095,14 @@ def main(argv=None) -> int:
     p = argparse.ArgumentParser(
         prog="turbocpp",
         description="llama.cpp + TurboQuant - unified CLI",
+        epilog=(
+            "Tips:\n"
+            "  -m accepts: local GGUF | config alias | hf://owner/repo/file.gguf\n"
+            "             | owner/repo:file.gguf  (auto-fetched from HF Hub)\n"
+            "  Run `turbocpp doctor` for an environment health check.\n"
+            "  Run `turbocpp config init` to scaffold ~/.config/turbocpp/config.toml.\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument("-V", "--version", action="version", version=f"turbocpp {__version__}")
     sub = p.add_subparsers(dest="cmd", required=True)
