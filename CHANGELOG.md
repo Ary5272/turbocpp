@@ -6,6 +6,10 @@ from `git tag` + commit subjects (see `scripts/gen_changelog.sh`).
 
 ## [Unreleased]
 
+## [v0.24.0] - 2026-05-07
+
+_stop_list helper, _human_size, list-models KB/MB/GB
+
 ## [v0.23.0] - 2026-05-07
 
 model-not-found friendly errors in _open_llama + serve pre-flight check
