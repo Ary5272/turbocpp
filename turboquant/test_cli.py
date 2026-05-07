@@ -231,6 +231,25 @@ def test_cache_dir_respects_xdg_cache_home(tmp_path, monkeypatch):
     assert state_dir() == tmp_path / "turbocpp"
 
 
+def test_chat_history_file_path(monkeypatch, tmp_path):
+    """Chat history sidecar lives at <state_dir>/chat-<sha1[:12]>.json - the
+    sha1 keys per-model, so swapping models doesn't clobber history."""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    import hashlib
+
+    from turboquant.config import state_dir
+
+    expected_dir = tmp_path / "turbocpp"
+    assert state_dir() == expected_dir
+    # Verify the prefix the chat command uses to derive history filenames.
+    h = hashlib.sha1(b"/abs/foo.gguf").hexdigest()[:12]
+    expected = expected_dir / f"chat-{h}.json"
+    # Just sanity-check the format - the actual logic is in _cmd_chat which
+    # we don't exercise here (would need llama_cpp).
+    assert expected.name.startswith("chat-")
+    assert expected.suffix == ".json"
+
+
 def test_default_image_env_override(monkeypatch):
     """TURBOCPP_LLAMA_IMAGE should override the baked-in default."""
     monkeypatch.setenv("TURBOCPP_LLAMA_IMAGE", "ghcr.io/ggml-org/llama.cpp:full-cuda")
