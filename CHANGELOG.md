@@ -6,6 +6,10 @@ from `git tag` + commit subjects (see `scripts/gen_changelog.sh`).
 
 ## [Unreleased]
 
+## [v0.12.0] - 2026-05-06
+
+speculative HF refs, /help, doctor --no-network, generate --n-batch/--rope-*/--flash-attn, download combined ref
+
 ## [v0.11.4] - 2026-05-06
 
 chore: regen CHANGELOG.md for v0.11.4
