@@ -728,8 +728,14 @@ def _cmd_tokenize(args) -> int:
         from pathlib import Path
 
         text = Path(args.input).read_text(encoding="utf-8")
-    else:
+    elif not sys.stdin.isatty():
         text = sys.stdin.read()
+    else:
+        print(
+            "tokenize needs input: --text TEXT, -i FILE, or piped stdin",
+            file=sys.stderr,
+        )
+        return 2
 
     llm = _open_llama(args)
     ids = llm.tokenize(text.encode("utf-8"), add_bos=args.add_bos)
