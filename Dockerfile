@@ -73,8 +73,12 @@ RUN pip install --only-binary=:all: \
         "huggingface_hub>=0.24,<1.0" \
         "gguf>=0.10"
 
-# Sanity check: the unified CLI is reachable.
-RUN turbocpp --help >/dev/null
+# Sanity check: the unified CLI is reachable AND every subcommand parses
+# (catches help-string crashes early). Also asserts llama-cpp-python and
+# huggingface_hub actually loaded.
+RUN turbocpp --help >/dev/null \
+ && turbocpp doctor --no-network 2>&1 | tee /tmp/doctor.log \
+ && python -c "import llama_cpp, huggingface_hub; print('lcpp', llama_cpp.__version__, 'hub', huggingface_hub.__version__)"
 
 WORKDIR /work
 ENTRYPOINT ["turbocpp"]
