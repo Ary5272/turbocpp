@@ -507,6 +507,10 @@ def _cmd_chat(args) -> int:
         msgs.append({"role": "user", "content": user})
         reply = ""
         chat_sampler = _sampling_kwargs(args)
+        import time as _time
+
+        t0 = _time.time()
+        n_chunks = 0
         try:
             for chunk in llm.create_chat_completion(
                 messages=msgs,
@@ -520,8 +524,17 @@ def _cmd_chat(args) -> int:
                 sys.stdout.write(delta)
                 sys.stdout.flush()
                 reply += delta
+                n_chunks += 1
         except KeyboardInterrupt:
             print("\n(interrupted)", file=sys.stderr)
+        # Streaming chunks ≈ tokens for content; close enough for a UX hint.
+        dt = _time.time() - t0
+        if reply and dt > 0.05:
+            print(
+                f"\n[~{n_chunks} chunks in {dt:.2f}s "
+                f"-> {n_chunks / max(dt, 1e-3):.1f} chunk/s]",
+                file=sys.stderr,
+            )
         msgs.append({"role": "assistant", "content": reply})
         save()
 
