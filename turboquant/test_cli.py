@@ -99,6 +99,7 @@ def test_cli_no_args_errors():
         "quickstart",
         "version",
         "rm-model",
+        "config",
     ],
 )
 def test_each_subcommand_has_help(sub):
