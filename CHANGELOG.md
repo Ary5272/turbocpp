@@ -6,6 +6,10 @@ from `git tag` + commit subjects (see `scripts/gen_changelog.sh`).
 
 ## [Unreleased]
 
+## [v0.27.0] - 2026-05-07
+
+chat readline up-arrow + ctrl-R search
+
 ## [v0.26.1] - 2026-05-07
 
 re-release with format-clean main (v0.26.0 wheel was fine but main ci was red)
