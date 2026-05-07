@@ -135,6 +135,20 @@ def _open_llama(args, **overrides):
     ngl = getattr(args, "n_gpu_layers", 0)
     if ngl:
         kwargs["n_gpu_layers"] = ngl
+    # Optional shared knobs (only forwarded when the parser actually had
+    # them, so subcommands that don't expose them aren't affected).
+    n_batch = getattr(args, "n_batch", 0)
+    if n_batch:
+        kwargs["n_batch"] = n_batch
+    rope_freq_base = getattr(args, "rope_freq_base", 0.0)
+    if rope_freq_base:
+        kwargs["rope_freq_base"] = rope_freq_base
+    rope_freq_scale = getattr(args, "rope_freq_scale", 0.0)
+    if rope_freq_scale:
+        kwargs["rope_freq_scale"] = rope_freq_scale
+    flash_attn = getattr(args, "flash_attn", False)
+    if flash_attn:
+        kwargs["flash_attn"] = True
     kwargs.update(overrides)
     return Llama(**kwargs)
 
@@ -1034,6 +1048,26 @@ def main(argv=None) -> int:
         default="text",
         help="output format: 'text' streams raw tokens, 'jsonl' emits one "
         "JSON line per token (good for piping into jq).",
+    )
+    pg.add_argument("--n-batch", type=int, default=0, metavar="N", help="logical batch size")
+    pg.add_argument(
+        "--rope-freq-base",
+        type=float,
+        default=0.0,
+        metavar="F",
+        help="override RoPE base frequency (advanced; 0 = use model's metadata)",
+    )
+    pg.add_argument(
+        "--rope-freq-scale",
+        type=float,
+        default=0.0,
+        metavar="F",
+        help="RoPE frequency scale for context-length stretching",
+    )
+    pg.add_argument(
+        "--flash-attn",
+        action="store_true",
+        help="enable flash attention if the build supports it",
     )
     pg.set_defaults(func=_cmd_generate)
 
