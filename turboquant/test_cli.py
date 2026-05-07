@@ -250,6 +250,53 @@ def test_generate_requires_some_prompt(monkeypatch):
         _resolve_prompt(A)
 
 
+def test_build_grammar_missing_path_friendly_error(monkeypatch, tmp_path):
+    """_build_grammar should refuse a non-existent --grammar path with a
+    SystemExit naming the file, not a cryptic upstream parser error."""
+    import sys
+    import types
+
+    # Stub llama_cpp so the helper can reach the file-existence check
+    # without needing the real package.
+    fake = types.ModuleType("llama_cpp")
+    fake.LlamaGrammar = type("LlamaGrammar", (), {})  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "llama_cpp", fake)
+
+    from turboquant.cli import _build_grammar
+
+    class A:
+        grammar = str(tmp_path / "no_such_file.gbnf")
+        json_schema = None
+
+    with pytest.raises(SystemExit) as e:
+        _build_grammar(A)
+    assert "no_such_file.gbnf" in str(e.value)
+
+
+def test_build_grammar_invalid_json_schema_friendly_error(monkeypatch, tmp_path):
+    """_build_grammar should refuse malformed JSON with a SystemExit naming
+    the file."""
+    import sys
+    import types
+
+    fake = types.ModuleType("llama_cpp")
+    fake.LlamaGrammar = type("LlamaGrammar", (), {})  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "llama_cpp", fake)
+
+    schema = tmp_path / "bad.json"
+    schema.write_text("{ this is not valid json }", encoding="utf-8")
+
+    from turboquant.cli import _build_grammar
+
+    class A:
+        grammar = None
+        json_schema = str(schema)
+
+    with pytest.raises(SystemExit) as e:
+        _build_grammar(A)
+    assert "bad.json" in str(e.value)
+
+
 def test_generate_logprobs_flag_parsed():
     from turboquant.cli import main
 
