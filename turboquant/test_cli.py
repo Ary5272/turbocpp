@@ -451,6 +451,40 @@ def test_build_grammar_missing_path_friendly_error(monkeypatch, tmp_path):
     assert "no_such_file.gbnf" in str(e.value)
 
 
+def test_build_grammar_warns_on_both_set(monkeypatch, tmp_path, capsys):
+    """When both --grammar and --json-schema are passed, --grammar wins
+    and a stderr warning fires. Catches user mistakes early."""
+    import sys
+    import types
+
+    fake = types.ModuleType("llama_cpp")
+
+    class FakeGrammar:
+        @staticmethod
+        def from_string(_):
+            return "ok-grammar"
+
+    fake.LlamaGrammar = FakeGrammar  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "llama_cpp", fake)
+
+    grammar = tmp_path / "g.gbnf"
+    grammar.write_text("root ::= \"x\"", encoding="utf-8")
+    schema = tmp_path / "s.json"
+    schema.write_text("{}", encoding="utf-8")
+
+    from turboquant.cli import _build_grammar
+
+    class A:
+        grammar = str(grammar)
+        json_schema = str(schema)
+
+    result = _build_grammar(A)
+    err = capsys.readouterr().err
+    assert "warning" in err.lower()
+    assert "--grammar" in err
+    assert result == "ok-grammar"  # grammar took precedence
+
+
 def test_build_grammar_invalid_json_schema_friendly_error(monkeypatch, tmp_path):
     """_build_grammar should refuse malformed JSON with a SystemExit naming
     the file."""
