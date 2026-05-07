@@ -80,13 +80,21 @@ def _import_llama_cpp():
 
         return None
     except ImportError:
+        # `pick-wheel` returns the right URL for this CPU + Python combo,
+        # which is dramatically more useful than naming a fixed variant.
+        try:
+            from .cpu_features import best_wheel_url
+
+            url = best_wheel_url()
+        except Exception:
+            url = "https://huggingface.co/datasets/AIencoder/TurboCpp_Wheels"
         return (
             "llama-cpp-python isn't installed. either:\n"
             "  pip install 'turbocpp[runtime]'\n"
-            "or, on a platform where source-build fails (e.g. HF Spaces):\n"
-            "  pip install https://huggingface.co/datasets/AIencoder/TurboCpp_Wheels/"
-            "resolve/main/llama_cpp_python-0.3.16%2Bbasic_avx2_fma_f16c-cp312-"
-            "cp312-manylinux_2_31_x86_64.whl"
+            "or, on a platform where source-build fails (e.g. HF Spaces),\n"
+            "use the prebuilt wheel matched to this host:\n"
+            f"  pip install {url}\n"
+            "  (or run `turbocpp pick-wheel --all` for the full fallback ladder)"
         )
 
 
