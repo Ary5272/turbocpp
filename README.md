@@ -70,11 +70,19 @@ After install you get a `turbocpp` CLI:
 ```bash
 turbocpp rotate      ./Llama-3-8B  ./Llama-3-8B-tq        # offline Hadamard rotation
 turbocpp generate    -m model.gguf -p "Hello" -n 64        # one-shot inference
+turbocpp chat        -m model.gguf                         # multi-turn REPL with /help
 turbocpp serve       -m model.gguf --host 0.0.0.0 --port 8080
 turbocpp speculative -m target.gguf -d draft.gguf -p "..." # 1.5-3× faster decode
 turbocpp pick-wheel                                         # auto-pick fastest wheel
 turbocpp pick-wheel  --gpu cuda12                           # GPU variant URL
 turbocpp bench                                              # rotation/quant MSE microbench
+
+# Sampling knobs (works on `generate` and `chat`):
+turbocpp generate -m m.gguf -p "Hi" -t 0.7 --top-p 0.95 --top-k 40 --min-p 0.05 --repeat-penalty 1.1
+
+# Constrained output (GBNF or JSON schema):
+turbocpp generate -m m.gguf -p "..." --grammar grammar.gbnf
+turbocpp generate -m m.gguf -p "..." --json-schema schema.json --format jsonl
 
 # `-m` accepts: a local GGUF, a config alias, or a HuggingFace ref. The
 # ref is downloaded on first use into ~/.cache/turbocpp/models/ and cached.
