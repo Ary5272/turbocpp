@@ -983,7 +983,11 @@ def _cmd_llama_passthrough(args) -> int:
             print(f"bad --port {spec!r}; expected host:container", file=sys.stderr)
             return 2
         h, c = spec.split(":", 1)
-        ports[int(h)] = int(c)
+        try:
+            ports[int(h)] = int(c)
+        except ValueError:
+            print(f"bad --port {spec!r}; both sides must be integers", file=sys.stderr)
+            return 2
 
     image = args.image or DEFAULT_IMAGE
     rest = list(args.rest or [])
