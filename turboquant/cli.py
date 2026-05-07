@@ -475,11 +475,12 @@ def _cmd_chat(args) -> int:
 
         msgs.append({"role": "user", "content": user})
         reply = ""
+        chat_sampler = _sampling_kwargs(args)
         try:
             for chunk in llm.create_chat_completion(
                 messages=msgs,
                 max_tokens=args.n_predict,
-                temperature=args.temperature,
+                **chat_sampler,
                 stop=args.stop or None,
                 grammar=grammar,
                 stream=True,
@@ -1427,6 +1428,10 @@ def main(argv=None) -> int:
     pc.add_argument("-s", "--system", default=cd.get("system", ""), help="system prompt")
     pc.add_argument("-n", "--n-predict", type=int, default=cd.get("n_predict", 512))
     pc.add_argument("-t", "--temperature", type=float, default=cd.get("temperature", 0.7))
+    pc.add_argument("--top-p", type=float, default=cd.get("top_p", 0.95))
+    pc.add_argument("--top-k", type=int, default=cd.get("top_k", 0))
+    pc.add_argument("--min-p", type=float, default=cd.get("min_p", 0.0))
+    pc.add_argument("--repeat-penalty", type=float, default=cd.get("repeat_penalty", 0.0))
     pc.add_argument("--ctx", type=int, default=cd.get("ctx", 4096))
     pc.add_argument("--threads", type=int, default=cd.get("threads", 0))
     pc.add_argument("--seed", type=int, default=cd.get("seed", 0))
