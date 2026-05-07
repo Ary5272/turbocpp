@@ -467,16 +467,17 @@ def test_build_grammar_warns_on_both_set(monkeypatch, tmp_path, capsys):
     fake.LlamaGrammar = FakeGrammar  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "llama_cpp", fake)
 
-    grammar = tmp_path / "g.gbnf"
-    grammar.write_text("root ::= \"x\"", encoding="utf-8")
-    schema = tmp_path / "s.json"
-    schema.write_text("{}", encoding="utf-8")
+    g_path = tmp_path / "g.gbnf"
+    g_path.write_text('root ::= "x"', encoding="utf-8")
+    s_path = tmp_path / "s.json"
+    s_path.write_text("{}", encoding="utf-8")
+    g_str, s_str = str(g_path), str(s_path)
 
     from turboquant.cli import _build_grammar
 
     class A:
-        grammar = str(grammar)
-        json_schema = str(schema)
+        grammar = g_str
+        json_schema = s_str
 
     result = _build_grammar(A)
     err = capsys.readouterr().err
