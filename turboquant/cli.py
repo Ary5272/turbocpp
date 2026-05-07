@@ -859,8 +859,11 @@ def _cmd_download(args) -> int:
             for chunk in iter(lambda: f.read(1 << 20), b""):
                 h.update(chunk)
         actual = h.hexdigest()
-        if actual != args.sha256.lower():
-            print(f"sha256 mismatch: expected {args.sha256}, got {actual}", file=sys.stderr)
+        # Tolerate `sha256:abc...` prefix, surrounding whitespace, and
+        # mixed case - common copy/paste sources include all three.
+        expected = args.sha256.strip().lower().removeprefix("sha256:")
+        if actual != expected:
+            print(f"sha256 mismatch: expected {expected}, got {actual}", file=sys.stderr)
             return 3
         print(f"sha256 ok ({actual})", file=sys.stderr)
     return 0
