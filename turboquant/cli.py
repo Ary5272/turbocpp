@@ -844,8 +844,15 @@ def _cmd_llama_passthrough(args) -> int:
     from .llama_docker import DEFAULT_IMAGE, LLAMA_TOOLS, docker_available, run_tool
 
     tool = getattr(args, "_tool", None) or args.tool
+    if tool == "--list" or tool == "list":
+        for t in LLAMA_TOOLS:
+            print(t)
+        return 0
     if tool not in LLAMA_TOOLS:
-        print(f"unknown tool {tool!r}; choose from {LLAMA_TOOLS}", file=sys.stderr)
+        print(
+            f"unknown tool {tool!r}; choose from {', '.join(LLAMA_TOOLS)}",
+            file=sys.stderr,
+        )
         return 2
     if not docker_available():
         print(
