@@ -172,6 +172,15 @@ def test_llama_tools_list_complete():
     assert expected.issubset(set(LLAMA_TOOLS))
 
 
+def test_cache_dir_respects_xdg_cache_home(tmp_path, monkeypatch):
+    """cache_dir() should follow XDG_CACHE_HOME like every other helper."""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    from turboquant.config import cache_dir, state_dir
+
+    assert cache_dir() == tmp_path / "turbocpp" / "models"
+    assert state_dir() == tmp_path / "turbocpp"
+
+
 def test_default_image_env_override(monkeypatch):
     """TURBOCPP_LLAMA_IMAGE should override the baked-in default."""
     monkeypatch.setenv("TURBOCPP_LLAMA_IMAGE", "ghcr.io/ggml-org/llama.cpp:full-cuda")
