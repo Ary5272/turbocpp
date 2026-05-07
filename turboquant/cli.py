@@ -688,9 +688,18 @@ def _cmd_download(args) -> int:
 
     cache = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "turbocpp" / "models"
     cache.mkdir(parents=True, exist_ok=True)
+    # Allow `turbocpp download owner/repo:file.gguf` (HF-ref form) as a
+    # shorthand for `turbocpp download owner/repo file.gguf`. Lets users
+    # paste the same identifier they'd use with `-m`.
+    repo, filename = args.repo, args.filename
+    if filename is None and ":" in repo and repo.count("/") == 1:
+        repo, _, filename = repo.partition(":")
+    if filename is None:
+        print("error: pass FILENAME or use owner/repo:file.gguf form", file=sys.stderr)
+        return 2
     path = hf_hub_download(
-        repo_id=args.repo,
-        filename=args.filename,
+        repo_id=repo,
+        filename=filename,
         cache_dir=str(cache),
         local_dir=str(cache) if args.flat else None,
     )
@@ -1209,8 +1218,12 @@ def main(argv=None) -> int:
 
     # download
     pdl = sub.add_parser("download", help="fetch a GGUF (or any file) from HF")
-    pdl.add_argument("repo", help="HF repo id (e.g. TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF)")
-    pdl.add_argument("filename", help="exact filename inside the repo")
+    pdl.add_argument(
+        "repo",
+        help="HF repo id (e.g. TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF), or "
+        "the combined `owner/repo:file.gguf` form",
+    )
+    pdl.add_argument("filename", nargs="?", help="exact filename inside the repo")
     pdl.add_argument("--sha256", help="if set, verify the downloaded file matches")
     pdl.add_argument(
         "--flat",
