@@ -364,10 +364,14 @@ def _cmd_chat(args) -> int:
 
     args.model = resolve_model(args.model)
 
-    state = state_dir()
-    state.mkdir(parents=True, exist_ok=True)
-    model_id = hashlib.sha1(str(Path(args.model).resolve()).encode()).hexdigest()[:12]
-    history_file = state / f"chat-{model_id}.json"
+    if getattr(args, "history", None):
+        history_file = Path(os.path.expanduser(args.history)).resolve()
+        history_file.parent.mkdir(parents=True, exist_ok=True)
+    else:
+        state = state_dir()
+        state.mkdir(parents=True, exist_ok=True)
+        model_id = hashlib.sha1(str(Path(args.model).resolve()).encode()).hexdigest()[:12]
+        history_file = state / f"chat-{model_id}.json"
 
     msgs: list[dict] = []
     if not args.no_resume and history_file.exists():
@@ -1572,6 +1576,11 @@ def main(argv=None) -> int:
         "--no-resume",
         action="store_true",
         help="don't load previous conversation from ~/.cache/turbocpp/chat-*.json",
+    )
+    pc.add_argument(
+        "--history",
+        metavar="PATH",
+        help="explicit history JSON path (default: ~/.cache/turbocpp/chat-<sha>.json)",
     )
     pc.add_argument(
         "-ngl",
