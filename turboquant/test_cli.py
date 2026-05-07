@@ -447,6 +447,9 @@ def test_config_loads_and_overrides(tmp_path, monkeypatch):
         "[defaults.generate]\n"
         "temperature = 0.4\n"
         "threads = 16\n"  # generate override should win
+        "[defaults.serve]\n"
+        'host = "0.0.0.0"\n'
+        "port = 9090\n"
         "[models]\n"
         'tiny = "/models/tiny.gguf"\n',
         encoding="utf-8",
@@ -457,6 +460,10 @@ def test_config_loads_and_overrides(tmp_path, monkeypatch):
     g = cfg.defaults_for("generate")
     assert g["temperature"] == 0.4
     assert g["threads"] == 16
+    s = cfg.defaults_for("serve")
+    assert s["host"] == "0.0.0.0"
+    assert s["port"] == 9090
+    assert s["threads"] == 8  # global default wins where serve doesn't override
     assert cfg.resolve_model("tiny") == "/models/tiny.gguf"
     assert cfg.resolve_model("/literal/path.gguf") == "/literal/path.gguf"
 
