@@ -512,8 +512,17 @@ def _cmd_chat(args) -> int:
         if s.startswith("/load "):
             target = Path(os.path.expanduser(s[6:].strip()))
             try:
-                msgs = json.loads(target.read_text(encoding="utf-8"))
-                print(f"(loaded {len(msgs)} messages from {target})", file=sys.stderr)
+                loaded = json.loads(target.read_text(encoding="utf-8"))
+                if not isinstance(loaded, list) or not all(
+                    isinstance(m, dict) and "role" in m and "content" in m for m in loaded
+                ):
+                    print(
+                        "(load failed: expected a list of {role, content} dicts)",
+                        file=sys.stderr,
+                    )
+                else:
+                    msgs = loaded
+                    print(f"(loaded {len(msgs)} messages from {target})", file=sys.stderr)
             except Exception as e:
                 print(f"(load failed: {e})", file=sys.stderr)
             continue
