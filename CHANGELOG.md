@@ -6,6 +6,10 @@ from `git tag` + commit subjects (see `scripts/gen_changelog.sh`).
 
 ## [Unreleased]
 
+## [v0.14.0] - 2026-05-06
+
+bench --format json + chat /help + epilog tips + chat system mismatch warn + bench scripts modernized + CONTRIBUTING + docker-compose fix + defaults_for hardening
+
 ## [v0.13.0] - 2026-05-06
 
 turbocpp config subcommand + torch in runtime probe + serve --api-key generate + better docker-missing UX + llama list
