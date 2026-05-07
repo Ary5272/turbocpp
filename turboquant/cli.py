@@ -1430,9 +1430,7 @@ def main(argv=None) -> int:
         action="store_true",
         help="skip the HF wheel-URL HEAD probe (offline / air-gapped)",
     )
-    pd.add_argument(
-        "--no-color", action="store_true", help="disable ANSI color in PASS/WARN/FAIL"
-    )
+    pd.add_argument("--no-color", action="store_true", help="disable ANSI color in PASS/WARN/FAIL")
     pd.set_defaults(func=_cmd_doctor)
 
     # info

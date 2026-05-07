@@ -50,6 +50,7 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends \
         ca-certificates \
         libgomp1 \
+        libopenblas0 \
  && rm -rf /var/lib/apt/lists/* \
  && pip install --upgrade pip
 
