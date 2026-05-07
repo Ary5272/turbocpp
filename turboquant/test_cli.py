@@ -797,6 +797,32 @@ def test_doctor_no_network_flag_parsed():
     assert isinstance(rc, int)
 
 
+def test_download_accepts_hf_url_ref(monkeypatch, tmp_path):
+    """`turbocpp download hf://owner/repo/file.gguf` (no FILENAME positional)
+    splits into (owner/repo, file.gguf) before calling hf_hub_download."""
+    import sys
+    import types
+
+    calls = {}
+
+    def fake_dl(repo_id, filename, cache_dir, **kw):
+        calls["repo_id"] = repo_id
+        calls["filename"] = filename
+        return str(tmp_path / "x.gguf")
+
+    fake_hub = types.ModuleType("huggingface_hub")
+    fake_hub.hf_hub_download = fake_dl  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "huggingface_hub", fake_hub)
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+
+    from turboquant.cli import main
+
+    rc = main(["download", "hf://owner/repo/file.gguf"])
+    assert rc == 0
+    assert calls["repo_id"] == "owner/repo"
+    assert calls["filename"] == "file.gguf"
+
+
 def test_download_accepts_combined_ref(monkeypatch, tmp_path):
     """`turbocpp download owner/repo:file.gguf` should split into two
     args before calling hf_hub_download."""

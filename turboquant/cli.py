@@ -775,10 +775,19 @@ def _cmd_download(args) -> int:
     # shorthand for `turbocpp download owner/repo file.gguf`. Lets users
     # paste the same identifier they'd use with `-m`.
     repo, filename = args.repo, args.filename
-    if filename is None and ":" in repo and repo.count("/") == 1:
+    if repo.startswith("hf://"):
+        # `hf://owner/repo/path/file.gguf` form (no FILENAME positional).
+        rest = repo[len("hf://") :]
+        parts = rest.split("/", 2)
+        if len(parts) >= 3:
+            repo, filename = f"{parts[0]}/{parts[1]}", parts[2]
+    elif filename is None and ":" in repo and repo.count("/") == 1:
         repo, _, filename = repo.partition(":")
     if filename is None:
-        print("error: pass FILENAME or use owner/repo:file.gguf form", file=sys.stderr)
+        print(
+            "error: pass FILENAME, use owner/repo:file.gguf, or hf://owner/repo/file.gguf",
+            file=sys.stderr,
+        )
         return 2
     path = hf_hub_download(
         repo_id=repo,
