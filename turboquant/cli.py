@@ -966,8 +966,12 @@ def _cmd_list_models(args) -> int:
         print()
         if cache_files:
             print(f"# cached GGUFs in {cache}:")
+            total = 0
             for p in cache_files:
-                print(f"  {_human_size(p.stat().st_size):>9}  {p}")
+                size = p.stat().st_size
+                total += size
+                print(f"  {_human_size(size):>9}  {p}")
+            print(f"# total: {len(cache_files)} files, {_human_size(total)}")
         else:
             print(f"# (no GGUFs in {cache} - fetch one with `turbocpp download REPO FILE`)")
     return 0
