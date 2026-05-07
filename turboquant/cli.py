@@ -467,12 +467,15 @@ def _cmd_doctor(args) -> int:
     row("PASS" if g else "WARN", "GPU", g or "none detected (CPU-only)")
 
     # HF wheel mirror reachability — kept in doctor only since it costs network.
-    try:
-        url = info["best_wheel_url"]
-        urllib.request.urlopen(urllib.request.Request(url, method="HEAD"), timeout=5).close()
-        row("PASS", "HF wheel URL reachable", url[:60] + "…")
-    except Exception as e:
-        row("WARN", "HF wheel URL reachable", f"{type(e).__name__}: {e}")
+    if getattr(args, "no_network", False):
+        row("WARN", "HF wheel URL reachable", "skipped (--no-network)")
+    else:
+        try:
+            url = info["best_wheel_url"]
+            urllib.request.urlopen(urllib.request.Request(url, method="HEAD"), timeout=5).close()
+            row("PASS", "HF wheel URL reachable", url[:60] + "…")
+        except Exception as e:
+            row("WARN", "HF wheel URL reachable", f"{type(e).__name__}: {e}")
 
     print(f"\n{'OK' if fails == 0 else f'{fails} failure(s)'}.", file=sys.stderr)
     return fails
@@ -1219,6 +1222,11 @@ def main(argv=None) -> int:
     # doctor (one-shot environment check)
     pd = sub.add_parser(
         "doctor", help="check turbocpp install health (deps, wheels, docker, GPU, ...)"
+    )
+    pd.add_argument(
+        "--no-network",
+        action="store_true",
+        help="skip the HF wheel-URL HEAD probe (offline / air-gapped)",
     )
     pd.set_defaults(func=_cmd_doctor)
 
