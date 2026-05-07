@@ -6,6 +6,10 @@ from `git tag` + commit subjects (see `scripts/gen_changelog.sh`).
 
 ## [Unreleased]
 
+## [v0.26.0] - 2026-05-07
+
+split torch/transformers into [rotate] extra (base install ~5MB)
+
 ## [v0.25.0] - 2026-05-07
 
 info --field for scriptable scalar extraction
