@@ -6,6 +6,10 @@ from `git tag` + commit subjects (see `scripts/gen_changelog.sh`).
 
 ## [Unreleased]
 
+## [v0.13.0] - 2026-05-06
+
+turbocpp config subcommand + torch in runtime probe + serve --api-key generate + better docker-missing UX + llama list
+
 ## [v0.12.0] - 2026-05-06
 
 speculative HF refs, /help, doctor --no-network, generate --n-batch/--rope-*/--flash-attn, download combined ref
