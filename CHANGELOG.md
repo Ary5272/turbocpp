@@ -6,6 +6,10 @@ from `git tag` + commit subjects (see `scripts/gen_changelog.sh`).
 
 ## [Unreleased]
 
+## [v0.15.0] - 2026-05-06
+
+TURBOCPP_LLAMA_IMAGE override + doctor color/no-color + embed/tokenize TTY guard + speculative HF-ref help + grammar errors + Dockerfile sanity + docs
+
 ## [v0.14.0] - 2026-05-06
 
 bench --format json + chat /help + epilog tips + chat system mismatch warn + bench scripts modernized + CONTRIBUTING + docker-compose fix + defaults_for hardening
