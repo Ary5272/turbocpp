@@ -130,6 +130,26 @@ def test_pick_wheel_gpu_cuda(capsys):
     assert "cuda12" in out
 
 
+def test_pick_wheel_py_override(capsys):
+    from turboquant.cli import main
+
+    rc = main(["pick-wheel", "--py", "3.11"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "cp311-cp311" in out
+
+
+def test_pick_wheel_variant_override(capsys):
+    from turboquant.cli import main
+
+    rc = main(["pick-wheel", "--variant", "basic_avx2"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "basic_avx2" in out
+    # Should not contain a more aggressive variant tag.
+    assert "basic_avx512" not in out
+
+
 # ---------------------------------------------------------------------------
 # cpu_features
 # ---------------------------------------------------------------------------
