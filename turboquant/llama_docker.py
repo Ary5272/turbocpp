@@ -58,14 +58,21 @@ def docker_available() -> bool:
 
 
 def image_present(image: str) -> bool:
-    """Return True if `docker images` lists this tag locally."""
+    """Return True if `docker images` lists this tag locally.
+
+    Uses a 5s timeout so a stuck/unreachable docker daemon (e.g. one that's
+    starting up, or socket-blocked) doesn't hang `doctor` or `info`."""
     if not docker_available():
         return False
-    r = subprocess.run(
-        ["docker", "image", "inspect", image],
-        capture_output=True,
-        text=True,
-    )
+    try:
+        r = subprocess.run(
+            ["docker", "image", "inspect", image],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return False
     return r.returncode == 0
 
 
