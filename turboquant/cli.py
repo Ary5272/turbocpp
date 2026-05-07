@@ -279,6 +279,17 @@ def _cmd_chat(args) -> int:
             msgs = []
     if not msgs and args.system:
         msgs.append({"role": "system", "content": args.system})
+    elif msgs and args.system:
+        # Resumed history may carry a stale system prompt; if the user
+        # passed --system this run, surface the mismatch so they can /reset
+        # or accept it as-is. Silently overriding would be worse.
+        existing_sys = next((m["content"] for m in msgs if m.get("role") == "system"), None)
+        if existing_sys is not None and existing_sys != args.system:
+            print(
+                "(note: resumed history has a different system prompt than "
+                "--system; use /system <NEW> or /reset to update)",
+                file=sys.stderr,
+            )
 
     # Route through _open_llama so n_gpu_layers + future shared kwargs
     # (e.g. n_batch, rope_freq_*) only have to be wired up in one place.
