@@ -1,16 +1,23 @@
 """Unified `turbocpp` CLI.
 
-Subcommands:
-  rotate    apply Hadamard rotation to a HF model directory
-  bench     run the synthetic rotation/quant MSE microbench
-  generate  one-shot inference via llama-cpp-python (needs [runtime] extra)
-  serve     OpenAI-compatible HTTP server via llama-cpp-python.server
+Run `turbocpp --help` for the up-to-date subcommand list (it auto-renders
+from the argparse setup in `main()` below; keeping a duplicate list here
+just rots).
 
-Examples:
-  turbocpp rotate ./Llama-3-8B ./Llama-3-8B-tq
-  turbocpp bench
-  turbocpp generate -m model.gguf -p "Hello" -n 64
-  turbocpp serve    -m model.gguf --host 0.0.0.0 --port 8080
+Architecture notes (orient yourself before editing):
+
+* Every subcommand handler is `_cmd_<name>(args) -> int`. argparse
+  registration lives in `main()` near the bottom of this file.
+* All Llama() construction goes through `_open_llama(args, **overrides)`
+  so `-ngl`, `--n-batch`, `--rope-*`, `--flash-attn`, and HF-ref
+  resolution are wired up exactly once.
+* `runtime_probe.collect_runtime_topology()` is the single source of
+  truth shared by `info` (JSON dump) and `doctor` (human-readable
+  checklist). Add new probes there, not in either command.
+* Commands that need llama.cpp tools (convert / quantize / perplexity
+  / imatrix / llama-cli / llama-bench / speculative) are forwarded
+  through `llama_docker.run_tool()` into ggml-org's official image -
+  we don't vendor llama.cpp as a submodule anymore.
 """
 
 from __future__ import annotations
