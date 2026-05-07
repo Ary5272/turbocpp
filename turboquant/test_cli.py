@@ -297,6 +297,22 @@ def test_config_missing_returns_empty(tmp_path, monkeypatch):
     assert cfg.resolve_model("anything") == "anything"
 
 
+def test_config_defaults_for_handles_malformed(tmp_path, monkeypatch):
+    """A typo'd `defaults.<subcommand>` (scalar instead of table) must
+    not crash defaults_for - we just ignore it."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    cfg = tmp_path / "turbocpp" / "config.toml"
+    cfg.parent.mkdir(parents=True)
+    cfg.write_text(
+        '[defaults]\nthreads = 4\ngenerate = "oops a string instead of a table"\n',
+        encoding="utf-8",
+    )
+    from turboquant.config import defaults_for
+
+    out = defaults_for("generate")
+    assert out == {"threads": 4}
+
+
 def test_config_loads_and_overrides(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     p = tmp_path / "turbocpp" / "config.toml"

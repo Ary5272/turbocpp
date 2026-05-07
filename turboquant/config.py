@@ -56,13 +56,19 @@ def load() -> dict[str, Any]:
 
 def defaults_for(subcommand: str) -> dict[str, Any]:
     """Merge `[defaults]` + `[defaults.<subcommand>]`. Subcommand-specific
-    keys override the global ones."""
+    keys override the global ones. A non-dict at `defaults.<subcommand>`
+    (user typo, e.g. `defaults.generate = "x"` instead of a table) is
+    silently ignored - we never crash on a malformed config."""
     cfg = load()
-    base = dict(cfg.get("defaults", {}) or {})
-    sub = cfg.get("defaults", {}).get(subcommand, {}) or {}
-    # Strip nested subsections from `base` (they're tables, not values).
-    base = {k: v for k, v in base.items() if not isinstance(v, dict)}
-    base.update(sub)
+    defaults = cfg.get("defaults", {}) or {}
+    if not isinstance(defaults, dict):
+        return {}
+    # Strip nested subsections AND any key matching a subcommand name -
+    # those are not global scalar defaults regardless of type.
+    base = {k: v for k, v in defaults.items() if not isinstance(v, dict) and k != subcommand}
+    sub = defaults.get(subcommand, {}) or {}
+    if isinstance(sub, dict):
+        base.update(sub)
     return base
 
 
