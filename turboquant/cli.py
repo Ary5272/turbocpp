@@ -1351,6 +1351,7 @@ def main(argv=None) -> int:
     pg.set_defaults(func=_cmd_generate)
 
     # serve
+    sd = _defaults_for("serve")
     ps = sub.add_parser("serve", help="OpenAI-compatible HTTP server")
     ps.add_argument(
         "-m",
@@ -1358,10 +1359,10 @@ def main(argv=None) -> int:
         required=True,
         help="GGUF path | alias | hf://owner/repo/file.gguf | owner/repo:file.gguf",
     )
-    ps.add_argument("--host", default="127.0.0.1")
-    ps.add_argument("--port", type=int, default=8080)
-    ps.add_argument("--ctx", type=int, default=4096)
-    ps.add_argument("--threads", type=int, default=0)
+    ps.add_argument("--host", default=sd.get("host", "127.0.0.1"))
+    ps.add_argument("--port", type=int, default=sd.get("port", 8080))
+    ps.add_argument("--ctx", type=int, default=sd.get("ctx", 4096))
+    ps.add_argument("--threads", type=int, default=sd.get("threads", 0))
     ps.add_argument(
         "--api-key",
         default="",
