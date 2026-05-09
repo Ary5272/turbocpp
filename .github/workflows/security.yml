@@ -45,7 +45,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: github/codeql-action/init@e46ed2cbd01164d986452f91f178727624ae40d7 # v4.35.3
+      - uses: github/codeql-action/init@68bde559dea0fdcac2102bfdf6230c5f70eb485e # v4.35.4
         with:
           languages: ${{ matrix.language }}
           # The standalone C++ engine in extras/standalone has its own
@@ -59,6 +59,6 @@ jobs:
                 -DCMAKE_BUILD_TYPE=Release
           cmake --build extras/standalone/build -j
 
-      - uses: github/codeql-action/analyze@e46ed2cbd01164d986452f91f178727624ae40d7 # v4.35.3
+      - uses: github/codeql-action/analyze@68bde559dea0fdcac2102bfdf6230c5f70eb485e # v4.35.4
         with:
           category: /language:${{ matrix.language }}
