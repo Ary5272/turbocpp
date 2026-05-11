@@ -6,6 +6,10 @@ from `git tag` + commit subjects (see `scripts/gen_changelog.sh`).
 
 ## [Unreleased]
 
+## [v0.32.1] - 2026-05-07
+
+Dockerfile huggingface_hub bound aligned with pyproject
+
 ## [v0.32.0] - 2026-05-07
 
 doctor exit-code docs, README usage examples, chat --history
