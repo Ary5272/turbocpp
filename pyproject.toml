@@ -29,7 +29,7 @@ classifiers = [
 # `turbocpp doctor`, `turbocpp llama list`, `turbocpp pick-wheel`) needs
 # only stdlib + huggingface_hub.
 dependencies = [
-    "huggingface_hub>=0.24,<2.0",
+    "huggingface_hub>=0.24,<3.0",
 ]
 
 [project.optional-dependencies]
